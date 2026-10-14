@@ -4,3 +4,9 @@ M0 completed: clean upstream README-only repository, current main fetched; no un
 M1–M3 authorized and in progress. Previous software remains running until staged replacement passes health checks. Production host parameters remain runtime-only.
 
 M1 checkpoint: Argon2id/MFA/recovery/session revocation/audit, enrollment authority, bilingual responsive shell and edge/application limits implemented. Real native PostgreSQL integration and Chrome HTTPS browser scenarios passed. Screenshots under docs/evidence; no enrollment secrets captured. Go test/vet and tracked/history neutrality plus full gitleaks scans passed. Compose native smoke awaits CI; live Telegram is unconfigured and not verified with a real bot. M2/M3 remain in progress.
+
+Repository visibility was discovered to be public via GitHub API after the M1 push. No visibility change was performed. Local implementation continues; further pushes wait for the user's explicit public-push authorization or private visibility. Full tracked/history scans found no secrets before M1 publication.
+
+User reply: continuing milestone pushes to the existing public repository is explicitly authorized. Visibility stays unchanged.
+
+CI run 38645811734 failed before tests: the workstation npm registry mirror was inherited in lockfile URLs and timed out on GitHub. Lockfile download URLs now use the public official npm registry with unchanged package integrity hashes. No tests were removed or disabled. Native Compose still awaits the corrected CI run.
