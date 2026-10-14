@@ -79,6 +79,12 @@ secrets:
   db-password:
     file: "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/db-password"
 volumes:
-  database: {name: tunnelmanager-database}
+  database:
+    name: tunnelmanager-postgres-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${TUNNELMANAGER_DATA_DIR:-/var/lib/tunnelmanager}/postgres"
 networks:
   internal: {name: tunnelmanager-internal, driver: bridge}

@@ -77,6 +77,7 @@ func lifecycle(args []string) error {
 	f.StringVar(&c.Mode, "mode", c.Mode, "controller or node")
 	f.StringVar(&c.Dir, "dir", c.Dir, "Owned installation directory")
 	f.StringVar(&c.ConfigDir, "config-dir", c.ConfigDir, "Protected runtime config directory")
+	f.StringVar(&c.DataDir, "data-dir", c.DataDir, "Owned data directory (default /var/lib/tunnelmanager)")
 	f.StringVar(&c.Domain, "domain", c.Domain, "Panel domain/IP")
 	f.IntVar(&c.Port, "port", c.Port, "Panel port")
 	f.StringVar(&c.TLS, "tls", c.TLS, "existing, self-signed, acme-http, acme-dns or proxy")

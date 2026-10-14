@@ -77,7 +77,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	write(w, map[string]any{"node_id": id, "approved": auto, "protocol": protocol.Version})
 }
 func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.DB.Query(r.Context(), "SELECT id,name,role,approved,seen,reconnects,COALESCE(telemetry,'{}'),metadata FROM nodes ORDER BY name")
+	rows, e := s.DB.Query(r.Context(), "SELECT id,name,role,approved,seen,reconnects,COALESCE(telemetry,'{}'),metadata,pubkey,revision FROM nodes ORDER BY name")
 	if e != nil {
 		return
 	}
@@ -88,9 +88,10 @@ func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 		var a bool
 		var seen *time.Time
 		var reconnects int
-		var data, meta []byte
-		rows.Scan(&id, &n, &role, &a, &seen, &reconnects, &data, &meta)
-		items = append(items, map[string]any{"id": id, "name": n, "role": role, "approved": a, "seen": seen, "reconnects": reconnects, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "fresh": seen != nil && time.Since(*seen) < 90*time.Second})
+		var revision int64
+		var data, meta, pub []byte
+		rows.Scan(&id, &n, &role, &a, &seen, &reconnects, &data, &meta, &pub, &revision)
+		items = append(items, map[string]any{"id": id, "name": n, "role": role, "approved": a, "connected": s.isConnected(id), "seen": seen, "reconnects": reconnects, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "fingerprint": secure.Fingerprint(pub), "revision": revision, "fresh": seen != nil && time.Since(*seen) < 90*time.Second})
 	}
 	write(w, items)
 }
@@ -98,16 +99,33 @@ func (s *Server) nodeDetail(w http.ResponseWriter, r *http.Request) {
 	var id, name, role string
 	var approved bool
 	var seen *time.Time
-	var data, meta []byte
+	var data, meta, pub []byte
 	var reconnects int
-	e := s.DB.QueryRow(r.Context(), "SELECT id,name,role,approved,seen,reconnects,COALESCE(telemetry,'{}'),metadata FROM nodes WHERE id=$1", r.PathValue("id")).Scan(&id, &name, &role, &approved, &seen, &reconnects, &data, &meta)
+	var revision int64
+	e := s.DB.QueryRow(r.Context(), "SELECT id,name,role,approved,seen,reconnects,COALESCE(telemetry,'{}'),metadata,pubkey,revision FROM nodes WHERE id=$1", r.PathValue("id")).Scan(&id, &name, &role, &approved, &seen, &reconnects, &data, &meta, &pub, &revision)
 	if e != nil {
 		fail(w, 404, "node_missing", "Node not found.", "سرور پیدا نشد.")
 		return
 	}
-	write(w, map[string]any{"id": id, "name": name, "role": role, "approved": approved, "seen": seen, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "reconnects": reconnects, "fresh": seen != nil && time.Since(*seen) < 90*time.Second})
+	write(w, map[string]any{"id": id, "name": name, "role": role, "approved": approved, "connected": s.isConnected(id), "seen": seen, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "reconnects": reconnects, "fingerprint": secure.Fingerprint(pub), "revision": revision, "usage": s.usage(r.Context(), id), "fresh": seen != nil && time.Since(*seen) < 90*time.Second})
+}
+func (s *Server) isConnected(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.connected[id] != nil
 }
 func (s *Server) nodeApprove(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		Fingerprint string `json:"fingerprint"`
+	}
+	if !decode(w, r, &q) {
+		return
+	}
+	var pub []byte
+	if e := s.DB.QueryRow(r.Context(), "SELECT pubkey FROM nodes WHERE id=$1", r.PathValue("id")).Scan(&pub); e != nil || q.Fingerprint != secure.Fingerprint(pub) {
+		fail(w, 409, "identity_mismatch", "Compare the installer fingerprint before approval.", "اثر انگشت نمایش‌داده‌شده در نصب‌کننده را پیش از تأیید مقایسه کنید.")
+		return
+	}
 	tag, e := s.DB.Exec(r.Context(), "UPDATE nodes SET approved=true WHERE id=$1 AND NOT approved", r.PathValue("id"))
 	if e != nil || tag.RowsAffected() != 1 {
 		fail(w, 409, "already_approved", "Already approved or missing.", "سرور قبلاً تأیید شده یا وجود ندارد.")
@@ -118,13 +136,14 @@ func (s *Server) nodeApprove(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 	var q struct {
-		Name       string   `json:"name"`
-		Role       string   `json:"role"`
-		Tags       []string `json:"tags"`
-		Notes      string   `json:"notes"`
-		Provider   string   `json:"provider"`
-		Expiry     string   `json:"expiry"`
-		TrafficCap uint64   `json:"traffic_cap"`
+		Name             string   `json:"name"`
+		Role             string   `json:"role"`
+		Tags             []string `json:"tags"`
+		Notes            string   `json:"notes"`
+		Provider         string   `json:"provider"`
+		Expiry           string   `json:"expiry"`
+		TrafficCap       uint64   `json:"traffic_cap"`
+		ExpectedRevision int64    `json:"expected_revision"`
 	}
 	if !decode(w, r, &q) {
 		return
@@ -140,7 +159,11 @@ func (s *Server) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	meta, _ := json.Marshal(q)
-	s.DB.Exec(r.Context(), "UPDATE nodes SET name=$1,role=$2,metadata=$3 WHERE id=$4", q.Name, q.Role, meta, r.PathValue("id"))
+	tag, e := s.DB.Exec(r.Context(), "UPDATE nodes SET name=$1,role=$2,metadata=$3,revision=revision+1 WHERE id=$4 AND revision=$5", q.Name, q.Role, meta, r.PathValue("id"), q.ExpectedRevision)
+	if e != nil || tag.RowsAffected() != 1 {
+		fail(w, 409, "server_changed", "Server details changed. Refresh and compare before saving; your draft is preserved.", "اطلاعات سرور تغییر کرده است؛ پیش‌نویس را نگه دارید و پس از تازه‌سازی مقایسه کنید.")
+		return
+	}
 	s.Audit(r.Context(), "node-edit", r.PathValue("id"), "success")
 	write(w, map[string]bool{"ok": true})
 }
@@ -268,13 +291,23 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 			}, short(data.Processes[i].Name, 80))
 		}
 		b, _ = json.Marshal(data)
+		historyData, _ := json.Marshal(map[string]any{"at": data.At, "cpu_percent": data.CPU, "ram_used": data.RAMUsed, "ram_total": data.RAMTotal, "disk_total": data.DiskTotal, "disk_free": data.DiskFree, "networks": data.Networks, "process_count": len(data.Processes), "listener_count": len(data.Listeners), "scope": "host summary; process/listener lists are only current snapshots"})
 		tx, e := s.DB.Begin(r.Context())
 		if e != nil {
 			return
 		}
+		var previous []byte
+		if e = tx.QueryRow(r.Context(), "SELECT COALESCE(telemetry,'{}') FROM nodes WHERE id=$1 FOR UPDATE", auth.NodeID).Scan(&previous); e != nil {
+			tx.Rollback(r.Context())
+			return
+		}
+		if e = recordUsage(r.Context(), tx, auth.NodeID, previous, data); e != nil {
+			tx.Rollback(r.Context())
+			return
+		}
 		tag, e := tx.Exec(r.Context(), "UPDATE nodes SET seen=now(),telemetry=$1 WHERE id=$2 AND approved", b, auth.NodeID)
 		if e == nil && tag.RowsAffected() == 1 {
-			_, e = tx.Exec(r.Context(), "INSERT INTO measurements(node_id,data)VALUES($1,$2)", auth.NodeID, b)
+			_, e = tx.Exec(r.Context(), "INSERT INTO measurements(node_id,data)VALUES($1,$2)", auth.NodeID, historyData)
 		} else {
 			tx.Rollback(r.Context())
 			return

@@ -12,6 +12,7 @@ import (
 )
 
 type Config struct {
+	DataDir    string `json:"data_dir"`
 	PublicURL  string `json:"public_url,omitempty"`
 	Mode       string `json:"mode"`
 	Domain     string `json:"domain"`
@@ -33,7 +34,7 @@ type Config struct {
 }
 
 func Default() Config {
-	return Config{Mode: "controller", Domain: "", Port: 9443, Dir: "/opt/tunnelmanager", ConfigDir: "/etc/tunnelmanager", Language: "en", TLS: "self-signed", Database: "db", Profile: "standard", Admin: "admin", Bind: "0.0.0.0"}
+	return Config{DataDir: "/var/lib/tunnelmanager", Mode: "controller", Domain: "", Port: 9443, Dir: "/opt/tunnelmanager", ConfigDir: "/etc/tunnelmanager", Language: "en", TLS: "self-signed", Database: "db", Profile: "standard", Admin: "admin", Bind: "0.0.0.0"}
 }
 func Load(path string) (Config, error) {
 	b, e := os.ReadFile(path)

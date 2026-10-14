@@ -9,5 +9,8 @@ CREATE TABLE IF NOT EXISTS audit(id bigserial PRIMARY KEY,at timestamptz NOT NUL
 CREATE TABLE IF NOT EXISTS settings(id integer PRIMARY KEY CHECK(id=1),encrypted bytea NOT NULL);
 CREATE TABLE IF NOT EXISTS enrollment(hash text PRIMARY KEY,expires timestamptz NOT NULL,name text NOT NULL,role text NOT NULL,auto_approve boolean NOT NULL DEFAULT false,consumed boolean NOT NULL DEFAULT false);
 CREATE TABLE IF NOT EXISTS nodes(id text PRIMARY KEY,name text NOT NULL,role text NOT NULL,pubkey bytea NOT NULL,approved boolean NOT NULL DEFAULT false,created timestamptz NOT NULL DEFAULT now(),seen timestamptz,telemetry jsonb,metadata jsonb NOT NULL DEFAULT '{}',reconnects integer NOT NULL DEFAULT 0);
+ALTER TABLE nodes ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1;
+INSERT INTO schema_version VALUES(2) ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS measurements(id bigserial PRIMARY KEY,node_id text REFERENCES nodes(id) ON DELETE CASCADE,at timestamptz NOT NULL DEFAULT now(),data jsonb NOT NULL);
 CREATE INDEX IF NOT EXISTS measurements_node_at ON measurements(node_id,at DESC);
+CREATE TABLE IF NOT EXISTS node_usage(node_id text REFERENCES nodes(id) ON DELETE CASCADE,month text,rx bigint NOT NULL DEFAULT 0,tx bigint NOT NULL DEFAULT 0,started timestamptz NOT NULL,ended timestamptz NOT NULL,interface text NOT NULL,PRIMARY KEY(node_id,month));

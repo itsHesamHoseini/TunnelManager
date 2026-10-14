@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/itsHesamHoseini/TunnelManager/internal/agent"
 	"github.com/itsHesamHoseini/TunnelManager/internal/config"
 	"github.com/itsHesamHoseini/TunnelManager/internal/install"
+	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,6 +82,9 @@ func setupNode(ctx context.Context, c config.Config, yes bool) error {
 		return e
 	}
 	fmt.Println("Node installed. Waiting for explicit identity approval in the panel.")
+	if key, e := os.ReadFile(c.Identity); e == nil && len(key) == 64 {
+		fmt.Println("Node public identity:", secure.Fingerprint(ed25519.PrivateKey(key).Public().(ed25519.PublicKey)))
+	}
 	return nil
 }
 func uninstallNode(ctx context.Context, c config.Config, keep bool) error {

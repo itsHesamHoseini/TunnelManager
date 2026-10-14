@@ -33,3 +33,5 @@ jobs:
       - run: sh scripts/compose-smoke.sh
 
       - run: sh scripts/installer-smoke.sh
+
+      - run: sh scripts/node-smoke.sh

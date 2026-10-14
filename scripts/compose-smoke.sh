@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 mkdir -p .runtime/compose .runtime/config/tls .runtime/config/policy
+mkdir -p .runtime/data/postgres
 cp internal/deploy/templates/* .runtime/compose/
 cp internal/deploy/templates/.dockerignore .runtime/compose/
 CGO_ENABLED=0 go build -o .runtime/compose/tunnelmanager ./cmd/tunnelmanager
@@ -13,6 +14,7 @@ sudo chmod 600 .runtime/config/master.key .runtime/config/db-password .runtime/c
 export TUNNELMANAGER_CONFIG_DIR="$(pwd)/.runtime/config"
 export TUNNELMANAGER_BIND=127.0.0.1
 export TUNNELMANAGER_DOMAIN=localhost
+export TUNNELMANAGER_DATA_DIR="$(pwd)/.runtime/data"
 cleanup() {
   result=$?
   if [ "$result" -ne 0 ]; then docker compose -f .runtime/compose/compose.yaml logs --tail 40 edge controller; fi

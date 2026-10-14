@@ -62,7 +62,7 @@ func Validate(c config.Config) error {
 	if c.Port < 1 || c.Port > 65535 {
 		return errors.New("port must be between 1 and 65535")
 	}
-	for _, p := range []string{c.Dir, c.ConfigDir} {
+	for _, p := range []string{c.Dir, c.ConfigDir, c.DataDir} {
 		clean := filepath.Clean(p)
 		if !filepath.IsAbs(p) || clean == "/" || clean == "/etc" || clean == "/usr" || clean == "/var" || strings.ContainsAny(p, "\n\r\x00") {
 			return errors.New("choose an absolute dedicated directory")
@@ -201,11 +201,16 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 		return e
 	}
 	if existing {
+		if _, e = i.Compose(ctx, c, []string{"stop", "controller", "edge"}, nil); e != nil {
+			return e
+		}
 		dump, e := i.Compose(ctx, c, []string{"exec", "-T", "db", "pg_dump", "-U", "tunnelmanager", "-Fc", "tunnelmanager"}, nil)
 		if e != nil {
+			i.Compose(ctx, c, []string{"up", "-d", "--wait"}, nil)
 			return errors.New("pre-upgrade database backup failed")
 		}
 		if e = config.Atomic(filepath.Join(snapshot, "database.dump"), dump, 0600); e != nil {
+			i.Compose(ctx, c, []string{"up", "-d", "--wait"}, nil)
 			return e
 		}
 	}
@@ -253,6 +258,9 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 		return e
 	}
 	i.Progress("Step 2 of 5: TLS and deployment files")
+	if e = os.MkdirAll(filepath.Join(c.DataDir, "postgres"), 0700); e != nil {
+		return e
+	}
 	if e = i.TLS(ctx, c); e != nil {
 		return e
 	}
@@ -277,7 +285,7 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 			return e
 		}
 	}
-	env := fmt.Sprintf("TUNNELMANAGER_CONFIG_DIR=%s\nTUNNELMANAGER_PORT=%d\nTUNNELMANAGER_BIND=%s\nTUNNELMANAGER_DOMAIN=%s\n", c.ConfigDir, c.Port, c.Bind, c.Domain)
+	env := fmt.Sprintf("TUNNELMANAGER_CONFIG_DIR=%s\nTUNNELMANAGER_PORT=%d\nTUNNELMANAGER_BIND=%s\nTUNNELMANAGER_DOMAIN=%s\nTUNNELMANAGER_DATA_DIR=%s\n", c.ConfigDir, c.Port, c.Bind, c.Domain, c.DataDir)
 	if e = config.Atomic(filepath.Join(c.Dir, ".env"), []byte(env), 0600); e != nil {
 		return e
 	}
@@ -295,6 +303,23 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 		return e
 	}
 	i.Progress("Step 3 of 5: isolated controller stack")
+	if existing {
+		var oldCompose []byte
+		oldCompose, _ = os.ReadFile(filepath.Join(snapshot, "compose.yaml"))
+		if !strings.Contains(string(oldCompose), "tunnelmanager-postgres-data") {
+			if _, e = i.Compose(ctx, c, []string{"up", "-d", "--force-recreate", "--wait", "db"}, nil); e != nil {
+				return e
+			}
+			dump, e := os.ReadFile(filepath.Join(snapshot, "database.dump"))
+			if e != nil {
+				return e
+			}
+			if _, e = i.Compose(ctx, c, []string{"exec", "-T", "db", "pg_restore", "-U", "tunnelmanager", "-d", "tunnelmanager", "--clean", "--if-exists", "--single-transaction", "--no-owner", "--no-acl"}, strings.NewReader(string(dump))); e != nil {
+				return errors.New("data-location migration failed; old volume retained")
+			}
+			i.Progress("Database moved to the configured data directory; old Docker volume retained for rollback.")
+		}
+	}
 	if _, e = i.Compose(ctx, c, []string{"up", "-d", "--build", "--force-recreate", "--wait", "--wait-timeout", "180"}, nil); e != nil {
 		return e
 	}

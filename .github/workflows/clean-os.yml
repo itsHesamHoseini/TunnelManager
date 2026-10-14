@@ -1,0 +1,33 @@
+name: Clean OS installer
+on: [push, pull_request]
+permissions: {contents: read}
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:22.04", "ubuntu:24.04", "debian:12"]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version-file: go.mod}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - run: npm ci --prefix web && npm run build --prefix web
+      - run: CGO_ENABLED=0 go build -o .runtime/tunnelmanager ./cmd/tunnelmanager
+      - name: Isolated disposable systemd machine
+        env:
+          BASE_IMAGE: ${{ matrix.image }}
+        run: |
+          mkdir -p .runtime/clean-image
+          printf 'FROM %s\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y systemd systemd-sysv dbus ca-certificates curl gnupg iproute2 git\nCMD ["/lib/systemd/systemd"]\n' "$BASE_IMAGE" > .runtime/clean-image/Dockerfile
+          docker build -t tunnelmanager-ci-clean .runtime/clean-image
+          docker run -d --name tunnelmanager-ci-clean --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw tunnelmanager-ci-clean
+          docker exec tunnelmanager-ci-clean mkdir -p /work
+          docker cp .runtime/tunnelmanager tunnelmanager-ci-clean:/work/tunnelmanager
+          docker cp scripts/clean-os-smoke.sh tunnelmanager-ci-clean:/work/clean-os-smoke.sh
+          docker exec -e CI=true tunnelmanager-ci-clean sh /work/clean-os-smoke.sh
+      - if: always()
+        run: docker rm -f tunnelmanager-ci-clean || true

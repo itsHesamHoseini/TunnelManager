@@ -81,7 +81,14 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		p.Close()
 		return nil, errors.New("master key must be 32 bytes")
 	}
-	s := &Server{Config: cfg, DB: p, Limiter: limit.New(), dummy: secure.Password(secure.Token(32)), passwordSlots: make(chan struct{}, 2), agentSlots: make(chan struct{}, 8), connected: map[string]*websocket.Conn{}, settings: Settings{Language: "en", Profile: "standard"}}
+	defaults := Settings{Language: "en", Profile: "standard"}
+	if cfg.Language == "fa" {
+		defaults.Language = "fa"
+	}
+	if cfg.Profile == "strict" {
+		defaults.Profile = "strict"
+	}
+	s := &Server{Config: cfg, DB: p, Limiter: limit.New(), dummy: secure.Password(secure.Token(32)), passwordSlots: make(chan struct{}, 2), agentSlots: make(chan struct{}, 8), connected: map[string]*websocket.Conn{}, settings: defaults}
 	var encrypted []byte
 	if e = p.QueryRow(ctx, "SELECT encrypted FROM settings WHERE id=1").Scan(&encrypted); e == nil {
 		b, e = secure.Open(cfg.Key, "settings", encrypted)
@@ -90,14 +97,6 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		}
 		if e = json.Unmarshal(b, &s.settings); e != nil {
 			return nil, e
-		}
-	}
-	if s.settings.Profile != "strict" && cfg.Profile == "strict" {
-		s.settings.Profile = "strict"
-	}
-	if s.settings.Language == "" || s.settings.Language == "en" {
-		if cfg.Language == "fa" {
-			s.settings.Language = "fa"
 		}
 	}
 	s.syncEdgeProfile()
