@@ -99,7 +99,8 @@ func Preflight(c config.Config) []string {
 		if _, e := Run(ctx, "docker", []string{"compose", "version"}, nil); e != nil {
 			checks = append(checks, "FAIL: Docker/Compose unavailable; use the official signed apt installer")
 		}
-		if _, e := os.Stat(filepath.Join(c.Dir, "installation.json")); os.IsNotExist(e) {
+		owned, e := config.Load(filepath.Join(c.Dir, "installation.json"))
+		if e != nil || owned.Port != c.Port || owned.Bind != c.Bind {
 			ln, e := net.Listen("tcp", net.JoinHostPort(c.Bind, fmt.Sprint(c.Port)))
 			if e != nil {
 				checks = append(checks, "FAIL: chosen port occupied; inspect ss -ltnp and choose another port or explicitly free the previous panel site")

@@ -55,7 +55,12 @@ func edge(args []string) error {
 		}
 		test := exec.CommandContext(ctx, "nginx", "-t", "-c", candidate)
 		if b, e := test.CombinedOutput(); e != nil {
-			_ = b
+			if strings.Contains(strings.ToLower(string(b)), "permission denied") {
+				return errors.New("edge cannot read protected TLS files: keep them owned by the container's matching root identity; do not make private keys public")
+			}
+			if strings.Contains(strings.ToLower(string(b)), "host not found") {
+				return errors.New("edge controller DNS is not ready")
+			}
 			return errors.New("edge configuration validation failed")
 		}
 		if e = config.Atomic("/tmp/tunnelmanager-nginx.conf", []byte(str), 0600); e != nil {

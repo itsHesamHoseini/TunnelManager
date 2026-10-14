@@ -65,7 +65,7 @@ services:
     tmpfs: [/var/cache/nginx:size=16m, /var/run:size=1m, /tmp:size=16m]
     cap_drop: [ALL]
     # Nginx master only needs to create its tmpfs directories and drop worker identity.
-    cap_add: [CHOWN, SETUID, SETGID]
+    cap_add: [CHOWN, SETUID, SETGID, KILL]
     security_opt: [no-new-privileges:true]
     healthcheck:
       test: [CMD, /tunnelmanager, healthcheck, --url, "https://127.0.0.1:9443/healthz", --ca, /tls/cert.pem, --server-name, "${TUNNELMANAGER_DOMAIN:-localhost}"]

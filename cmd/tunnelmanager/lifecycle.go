@@ -55,6 +55,11 @@ func lifecycle(args []string) error {
 	var e error
 	f := flag.NewFlagSet(command, flag.ContinueOnError)
 	c := config.Default()
+	if exe, err := os.Executable(); err == nil {
+		if installed, err := config.Load(filepath.Join(filepath.Dir(exe), "installation.json")); err == nil {
+			c = installed
+		}
+	}
 	for i, a := range args {
 		if a == "--config" && i+1 < len(args) {
 			loaded, e := config.Load(args[i+1])
