@@ -35,7 +35,15 @@ func Run(ctx context.Context, program string, args []string, input io.Reader) ([
 	cmd.Stdin = input
 	b, e := cmd.CombinedOutput()
 	if e != nil {
-		return nil, fmt.Errorf("%s command failed; use doctor to inspect prerequisites", program)
+		lower := strings.ToLower(string(b))
+		reason := "command failed"
+		for _, rule := range [][2]string{{"apparmor", "container AppArmor is unavailable or denied; use a clean VM with Docker support"}, {"permission denied", "required file/kernel permission denied"}, {"address already in use", "selected port is already occupied"}, {"port is already allocated", "selected port is already allocated"}, {"unhealthy", "owned container failed health verification"}, {"no such file or directory", "required runtime file is missing"}, {"network is unreachable", "outbound network is unavailable"}, {"toomanyrequests", "image registry rate limit reached"}, {"failed to resolve", "image registry download could not be resolved"}, {"mount", "container data mount failed"}} {
+			if strings.Contains(lower, rule[0]) {
+				reason = rule[1]
+				break
+			}
+		}
+		return nil, fmt.Errorf("%s: %s; run doctor for the redacted state", program, reason)
 	}
 	return b, nil
 }

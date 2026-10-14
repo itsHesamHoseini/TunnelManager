@@ -28,6 +28,6 @@ jobs:
           docker exec tunnelmanager-ci-clean mkdir -p /work
           docker cp .runtime/tunnelmanager tunnelmanager-ci-clean:/work/tunnelmanager
           docker cp scripts/clean-os-smoke.sh tunnelmanager-ci-clean:/work/clean-os-smoke.sh
-          docker exec -e CI=true tunnelmanager-ci-clean sh /work/clean-os-smoke.sh
+          docker exec -e CI=true tunnelmanager-ci-clean sh /work/clean-os-smoke.sh || { docker exec tunnelmanager-ci-clean journalctl -u docker --no-pager -n 30; exit 1; }
       - if: always()
         run: docker rm -f tunnelmanager-ci-clean || true
