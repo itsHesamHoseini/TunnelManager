@@ -15,6 +15,9 @@ after="$(sudo sha256sum "$conf/master.key" | cut -d ' ' -f 1)"
 [ "$before" = "$after" ]
 sudo curl --fail --cacert "$conf/tls/cert.pem" https://127.0.0.1:9443/healthz
 sudo .runtime/installer doctor --dir "$dest"
+printf '%s\n' 'Synthetic-Reset-Password!' | sudo .runtime/installer reset-admin-password --dir "$dest" --yes
+test "$(sudo curl --silent --cacert "$conf/tls/cert.pem" -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d '{"Username":"testadmin","Password":"Synthetic-Installer-Password!"}' https://127.0.0.1:9443/api/login)" = 401
+test "$(sudo curl --silent --cacert "$conf/tls/cert.pem" -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d '{"Username":"testadmin","Password":"Synthetic-Reset-Password!"}' https://127.0.0.1:9443/api/login)" = 200
 printf '%s\n' 'Synthetic-Backup-Passphrase!' | sudo .runtime/installer backup --dir "$dest" --output "$root/.runtime/test.backup"
 printf '%s\n' 'Synthetic-Backup-Passphrase!' | sudo .runtime/installer restore --dir "$dest" --backup "$root/.runtime/test.backup" --yes --replace
 CGO_ENABLED=0 go build -tags integrationfault -o .runtime/fault-installer ./cmd/tunnelmanager

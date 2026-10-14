@@ -24,3 +24,17 @@ trap cleanup EXIT
 docker compose -f .runtime/compose/compose.yaml up -d --build --wait --wait-timeout 120
 sudo curl --fail --retry 3 --retry-all-errors --retry-delay 1 --cacert .runtime/config/tls/cert.pem https://127.0.0.1:9443/healthz
 test "$(sudo curl --silent --cacert .runtime/config/tls/cert.pem -o /dev/null -w '%{http_code}' https://127.0.0.1:9443/api/me)" = 401
+# Bounded requests only on this disposable stack verify nginx's real 429 response.
+for n in $(seq 1 45); do
+  sudo curl --silent --cacert .runtime/config/tls/cert.pem -D ".runtime/rate-$n.headers" -o /dev/null -w '%{http_code}' https://127.0.0.1:9443/api/me > ".runtime/rate-$n.status" &
+done
+wait
+grep -l '^429$' .runtime/rate-*.status >/dev/null
+grep -i 'Retry-After: 60' .runtime/rate-*.headers >/dev/null
+printf '{"profile":"strict"}' | sudo tee .runtime/config/policy/desired.json >/dev/null
+for n in $(seq 1 10); do
+  if sudo grep -q '"profile":"strict"' .runtime/config/policy/observed.json; then break; fi
+  sleep 1
+done
+sudo grep '"profile":"strict"' .runtime/config/policy/observed.json
+docker exec tunnelmanager-edge grep 'rate=5r/s;' /tmp/tunnelmanager-nginx.conf

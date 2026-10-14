@@ -21,6 +21,7 @@ func TestSignedChannelRejectsPendingAndAcceptsApproved(t *testing.T) {
 		t.Fatal(status)
 	}
 	id := b["node_id"].(string)
+	var previousProof []byte
 	connect := func() (*websocket.Conn, context.Context, context.CancelFunc) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		conn, _, e := websocket.Dial(ctx, "wss"+srv.URL[5:]+"/api/agent", &websocket.DialOptions{HTTPClient: c})
@@ -35,6 +36,7 @@ func TestSignedChannelRejectsPendingAndAcceptsApproved(t *testing.T) {
 		json.Unmarshal(b, &hello)
 		msg := id + "\n" + hello.Nonce + "\n" + hello.Expires.UTC().Format(time.RFC3339Nano)
 		b, _ = json.Marshal(protocol.Authentication{NodeID: id, Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(key, []byte(msg)))})
+		previousProof = append([]byte(nil), b...)
 		if e = conn.Write(ctx, websocket.MessageText, b); e != nil {
 			t.Fatal(e)
 		}
@@ -47,6 +49,19 @@ func TestSignedChannelRejectsPendingAndAcceptsApproved(t *testing.T) {
 	conn.CloseNow()
 	cancel()
 	s.DB.Exec(context.Background(), "UPDATE nodes SET approved=true WHERE id=$1", id)
+	// The old valid proof is bound to the previous connection's nonce.
+	replayCtx, replayCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	replay, _, err := websocket.Dial(replayCtx, "wss"+srv.URL[5:]+"/api/agent", &websocket.DialOptions{HTTPClient: c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay.Read(replayCtx)
+	replay.Write(replayCtx, websocket.MessageText, previousProof)
+	if _, _, e := replay.Read(replayCtx); e == nil {
+		t.Fatal("old identity proof replay accepted")
+	}
+	replay.CloseNow()
+	replayCancel()
 	conn, ctx, cancel = connect()
 	defer cancel()
 	defer conn.CloseNow()
@@ -67,6 +82,12 @@ func TestSignedChannelRejectsPendingAndAcceptsApproved(t *testing.T) {
 	if samples != 1 {
 		t.Fatal("not persisted")
 	}
+	duplicate, duplicateCtx, duplicateCancel := connect()
+	if _, _, e := duplicate.Read(duplicateCtx); e == nil {
+		t.Fatal("duplicate identity connection accepted")
+	}
+	duplicate.CloseNow()
+	duplicateCancel()
 	data, _ = json.Marshal(map[string]any{"type": "shell", "command": "synthetic forbidden action"})
 	conn.Write(ctx, websocket.MessageText, data)
 	if _, _, e = conn.Read(ctx); e == nil {
