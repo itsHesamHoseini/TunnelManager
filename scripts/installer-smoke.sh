@@ -8,7 +8,15 @@ mkdir -p .runtime
 CGO_ENABLED=0 go build -o .runtime/installer ./cmd/tunnelmanager
 cleanup() { sudo .runtime/installer uninstall --dir "$dest" --yes --keep-data=false || true; }
 trap cleanup EXIT
-printf '%s\n' 'Synthetic-Installer-Password!' | sudo .runtime/installer setup --yes --password-stdin --domain 127.0.0.1 --bind 127.0.0.1 --port 9443 --dir "$dest" --config-dir "$conf" --admin testadmin
+sha="$(sha256sum .runtime/installer | cut -d ' ' -f 1)"
+printf '%s  tunnelmanager-linux-amd64\n' "$sha" > .runtime/SHA256SUMS
+printf '%064d  tunnelmanager-linux-amd64\n' 0 > .runtime/BADSUMS
+if sudo env TUNNELMANAGER_BINARY="$root/.runtime/installer" TUNNELMANAGER_CHECKSUM_FILE="$root/.runtime/BADSUMS" sh install.sh setup --yes --save-credentials --dir "$dest"; then
+  echo "Expected checksum mismatch rejection." >&2
+  exit 1
+fi
+test ! -f "$dest/installation.json"
+printf '%s\n' 'Synthetic-Installer-Password!' | sudo env TUNNELMANAGER_BINARY="$root/.runtime/installer" TUNNELMANAGER_CHECKSUM_FILE="$root/.runtime/SHA256SUMS" sh install.sh setup --yes --password-stdin --domain 127.0.0.1 --bind 127.0.0.1 --port 9443 --dir "$dest" --config-dir "$conf" --admin testadmin
 before="$(sudo sha256sum "$conf/master.key" | cut -d ' ' -f 1)"
 sudo .runtime/installer setup --yes --config "$dest/installation.json"
 after="$(sudo sha256sum "$conf/master.key" | cut -d ' ' -f 1)"

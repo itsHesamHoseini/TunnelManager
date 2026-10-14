@@ -28,9 +28,13 @@ actual="$(sha256sum "$task_temp/tunnelmanager-linux-$arch" | cut -d ' ' -f 1)"
 [ "$actual" = "$expected" ] || { echo "Checksum mismatch; nothing installed." >&2; exit 1; }
 chmod 700 "$task_temp/tunnelmanager-linux-$arch"
 if [ "$#" -eq 0 ]; then set -- setup; fi
-if [ -t 0 ]; then
+unattended=0
+for arg in "$@"; do
+  case "$arg" in --yes) unattended=1;; esac
+done
+if [ "$unattended" = 1 ] || [ -t 0 ]; then
   "$task_temp/tunnelmanager-linux-$arch" "$@"
-elif [ -r /dev/tty ]; then
+elif [ -r /dev/tty ] && ( : </dev/tty ) 2>/dev/null; then
   "$task_temp/tunnelmanager-linux-$arch" "$@" </dev/tty
 else
   "$task_temp/tunnelmanager-linux-$arch" "$@"
