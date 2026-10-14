@@ -246,6 +246,11 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 			return e
 		}
 	}
+	os.MkdirAll(filepath.Join(c.ConfigDir, "policy"), 0700)
+	policy, _ := json.Marshal(map[string]string{"profile": c.Profile})
+	if e = config.Atomic(filepath.Join(c.ConfigDir, "policy", "desired.json"), policy, 0600); e != nil {
+		return e
+	}
 	i.Progress("Step 2 of 5: TLS and deployment files")
 	if e = i.TLS(ctx, c); e != nil {
 		return e
@@ -260,6 +265,11 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 			for _, line := range []string{"ssl_certificate /tls/cert.pem;", "ssl_certificate_key /tls/key.pem;", "ssl_protocols TLSv1.2 TLSv1.3;"} {
 				str = strings.Replace(str, line, "", 1)
 			}
+			b = []byte(str)
+		}
+		if c.TLS == "proxy" && f == "compose.yaml" {
+			str := strings.Replace(string(b), "command: [edge]", "command: [edge, --plain]", 1)
+			str = strings.Replace(str, "test: [CMD, /tunnelmanager, healthcheck, --url, \"https://127.0.0.1:9443/healthz\", --ca, /tls/cert.pem, --server-name, \"${TUNNELMANAGER_DOMAIN:-localhost}\"]", "test: [CMD, /tunnelmanager, healthcheck, --url, \"http://127.0.0.1:9443/healthz\"]", 1)
 			b = []byte(str)
 		}
 		if e = config.Atomic(filepath.Join(c.Dir, f), b, 0600); e != nil {

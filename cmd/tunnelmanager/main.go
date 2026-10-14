@@ -34,6 +34,8 @@ func run(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "edge":
+		return edge(args[1:])
 	case "agent":
 		f := flag.NewFlagSet("agent", flag.ContinueOnError)
 		p := f.String("config", "/etc/tunnelmanager-agent/node.json", "Native agent config")
@@ -105,7 +107,7 @@ func run(args []string) error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		s, e := controller.New(ctx, controller.Config{Address: ":8080", Origin: cfg.Origin(), DatabaseURL: db, Key: key, TrustProxy: true, Static: ui.Handler(), Profile: cfg.Profile})
+		s, e := controller.New(ctx, controller.Config{Address: ":8080", Origin: cfg.Origin(), DatabaseURL: db, Key: key, TrustProxy: true, Static: ui.Handler(), Profile: cfg.Profile, Language: cfg.Language, PolicyDirectory: "/policy"})
 		if e != nil {
 			return fmt.Errorf("controller startup failed (check database and key)")
 		}

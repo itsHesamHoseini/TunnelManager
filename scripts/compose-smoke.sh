@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-mkdir -p .runtime/compose .runtime/config/tls
+mkdir -p .runtime/compose .runtime/config/tls .runtime/config/policy
 cp internal/deploy/templates/* .runtime/compose/
 cp internal/deploy/templates/.dockerignore .runtime/compose/
 CGO_ENABLED=0 go build -o .runtime/compose/tunnelmanager ./cmd/tunnelmanager

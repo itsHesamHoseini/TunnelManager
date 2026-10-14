@@ -20,6 +20,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +32,8 @@ import (
 var schema embed.FS
 
 type Config struct {
+	PolicyDirectory              string
+	Language                     string
 	Address, Origin, DatabaseURL string
 	Key                          []byte
 	TrustProxy                   bool
@@ -88,7 +92,25 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 			return nil, e
 		}
 	}
+	if s.settings.Profile != "strict" && cfg.Profile == "strict" {
+		s.settings.Profile = "strict"
+	}
+	if s.settings.Language == "" || s.settings.Language == "en" {
+		if cfg.Language == "fa" {
+			s.settings.Language = "fa"
+		}
+	}
+	s.syncEdgeProfile()
 	return s, nil
+}
+
+func (s *Server) syncEdgeProfile() error {
+	if s.Config.PolicyDirectory == "" {
+		return nil
+	}
+	st := s.settingsCopy()
+	b, _ := json.Marshal(map[string]string{"profile": st.Profile})
+	return runtimeConfigAtomic(filepath.Join(s.Config.PolicyDirectory, "desired.json"), b)
 }
 func (s *Server) Close() {
 	s.mu.Lock()
@@ -573,7 +595,13 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	st := s.settingsCopy()
 	tokenSet := st.TelegramToken != ""
 	st.TelegramToken = ""
-	write(w, map[string]any{"settings": st, "telegram_token_set": tokenSet})
+	observed := map[string]any{}
+	if s.Config.PolicyDirectory != "" {
+		if b, e := os.ReadFile(filepath.Join(s.Config.PolicyDirectory, "observed.json")); e == nil {
+			json.Unmarshal(b, &observed)
+		}
+	}
+	write(w, map[string]any{"settings": st, "telegram_token_set": tokenSet, "edge": observed})
 }
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	var q Settings
@@ -623,6 +651,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.settings = q
 	s.mu.Unlock()
+	s.syncEdgeProfile()
 	s.Audit(r.Context(), "settings", "", "success")
 	s.getSettings(w, r)
 }
