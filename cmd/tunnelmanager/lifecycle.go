@@ -93,6 +93,7 @@ func lifecycle(args []string) error {
 	cfgPath := f.String("config", "", "JSON configuration (valid YAML JSON subset)")
 	passwordStdin := f.Bool("password-stdin", false, "Read initial admin password from protected stdin")
 	tokenStdin := f.Bool("token-stdin", false, "Read one-time node token from protected input")
+	reenroll := f.Bool("reenroll", false, "Explicitly enroll a new node record with the existing local identity")
 	saveCredentials := f.Bool("save-credentials", false, "Save generated credentials once in a root-only file")
 	localNode := f.Bool("with-local-node", false, "Install and approve the controller host's own outbound agent")
 	installDocker := f.Bool("install-docker", false, "Explicitly install Docker from official signed apt packages if absent")
@@ -135,7 +136,7 @@ func lifecycle(args []string) error {
 			c.Mode = v
 		}
 		if c.Mode == "node" {
-			return setupNode(ctx, c, *yes)
+			return setupNode(ctx, c, *yes, *reenroll)
 		}
 		if _, e := exec.LookPath("docker"); e != nil {
 			allow := *installDocker

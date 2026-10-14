@@ -16,7 +16,14 @@ import (
 	"strings"
 )
 
-func setupNode(ctx context.Context, c config.Config, yes bool) error {
+func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) error {
+	wasInstalled := false
+	if unit, e := os.ReadFile("/etc/systemd/system/tunnelmanager-agent.service"); e == nil {
+		if !strings.Contains(string(unit), "Description=TunnelManager outbound node agent") {
+			return errors.New("existing unit is not owned by this installer; retained")
+		}
+		wasInstalled = true
+	}
 	if c.Dir == "/opt/tunnelmanager" {
 		c.Dir = "/opt/tunnelmanager-agent"
 	}
@@ -33,7 +40,7 @@ func setupNode(ctx context.Context, c config.Config, yes bool) error {
 		}
 		c.Controller = v
 	}
-	if old, e := config.Load(filepath.Join(c.ConfigDir, "node.json")); e == nil && old.NodeID != "" {
+	if old, e := config.Load(filepath.Join(c.ConfigDir, "node.json")); e == nil && old.NodeID != "" && !reenroll {
 		c = old
 		fmt.Println("Existing node identity retained; repairing owned agent unit.")
 	} else {
@@ -78,6 +85,11 @@ func setupNode(ctx context.Context, c config.Config, yes bool) error {
 	if _, e = install.Run(ctx, "systemctl", []string{"enable", "--now", "tunnelmanager-agent.service"}, nil); e != nil {
 		return e
 	}
+	if wasInstalled {
+		if _, e = install.Run(ctx, "systemctl", []string{"restart", "tunnelmanager-agent.service"}, nil); e != nil {
+			return e
+		}
+	}
 	if e = config.Write(filepath.Join(c.Dir, "installation.json"), c); e != nil {
 		return e
 	}
@@ -114,7 +126,7 @@ func firstNode(ctx context.Context, c config.Config) error {
 		if old.Controller != c.Origin() {
 			return errors.New("existing local agent belongs to a different controller origin; retained")
 		}
-		return setupNode(ctx, old, true)
+		return setupNode(ctx, old, true, false)
 	}
 	i := install.New()
 	payload, _ := json.Marshal(map[string]any{"Name": "Controller host", "Role": "foreign", "AutoApprove": true})
@@ -143,5 +155,5 @@ func firstNode(ctx context.Context, c config.Config) error {
 	if e != nil {
 		return e
 	}
-	return setupNode(ctx, node, true)
+	return setupNode(ctx, node, true, false)
 }
