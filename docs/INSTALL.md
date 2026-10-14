@@ -3,6 +3,7 @@ Build once: npm ci --prefix web; npm run build --prefix web; CGO_ENABLED=0 GOOS=
 Use SHA256SUMS and install.sh for verified local artifacts; release bootstrap resolves an exact reviewed version and verifies its checksum before execution.
 Interactive: sudo ./tunnelmanager setup. Automation: sudo ./tunnelmanager setup --yes --config setup.yaml --password-stdin.
 JSON and YAML accept the same fields: mode, domain, port, dir, config_dir, language, tls, cert, key, bind, public_url, admin, profile, controller, ca. Configuration never accepts passwords or raw identity keys.
+data_dir selects the dedicated controller database parent (default /var/lib/tunnelmanager). Uninstall --keep-data=false removes only its verified owned postgres subtree; exported backups are preserved. The node-specific --mode option resolves the native agent installation even when the CLI link belongs to a controller in a custom directory.
 Example:
 ```yaml
 mode: controller
