@@ -52,6 +52,7 @@ type Server struct {
 	Limiter       *limit.Limiter
 	dummy         string
 	passwordSlots chan struct{}
+	agentSlots    chan struct{}
 	mu            sync.Mutex
 	connected     map[string]*websocket.Conn
 	settings      Settings
@@ -76,7 +77,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		p.Close()
 		return nil, errors.New("master key must be 32 bytes")
 	}
-	s := &Server{Config: cfg, DB: p, Limiter: limit.New(), dummy: secure.Password(secure.Token(32)), passwordSlots: make(chan struct{}, 2), connected: map[string]*websocket.Conn{}, settings: Settings{Language: "en", Profile: "standard"}}
+	s := &Server{Config: cfg, DB: p, Limiter: limit.New(), dummy: secure.Password(secure.Token(32)), passwordSlots: make(chan struct{}, 2), agentSlots: make(chan struct{}, 8), connected: map[string]*websocket.Conn{}, settings: Settings{Language: "en", Profile: "standard"}}
 	var encrypted []byte
 	if e = p.QueryRow(ctx, "SELECT encrypted FROM settings WHERE id=1").Scan(&encrypted); e == nil {
 		b, e = secure.Open(cfg.Key, "settings", encrypted)
@@ -101,8 +102,21 @@ func (s *Server) InitAdmin(ctx context.Context, u, p string) error {
 	if len(u) < 3 || len(u) > 64 || len(p) < 16 {
 		return errors.New("username >=3 and password >=16 characters required")
 	}
-	_, e := s.DB.Exec(ctx, "INSERT INTO admins(id,username,password_hash)VALUES(1,$1,$2)", u, secure.Password(p))
-	return e
+	tag, e := s.DB.Exec(ctx, "INSERT INTO admins(id,username,password_hash)VALUES(1,$1,$2) ON CONFLICT(id) DO NOTHING", u, secure.Password(p))
+	if e != nil {
+		return e
+	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	var existing, hash string
+	if e = s.DB.QueryRow(ctx, "SELECT username,password_hash FROM admins WHERE id=1").Scan(&existing, &hash); e != nil {
+		return e
+	}
+	if existing == u && secure.VerifyPassword(p, hash) {
+		return nil
+	}
+	return errors.New("existing administrator retained; use explicit password reset if needed")
 }
 func (s *Server) Audit(ctx context.Context, a, t, r string) {
 	_, _ = s.DB.Exec(ctx, "INSERT INTO audit(action,target,result)VALUES($1,$2,$3)", a, t, r)
@@ -158,7 +172,16 @@ func inCIDRs(ip string, list []string) bool {
 	return false
 }
 func (s *Server) limited(w http.ResponseWriter, r *http.Request, key string, rate, burst float64) bool {
+	if s.settingsCopy().Profile == "strict" {
+		rate /= 2
+		burst = math.Max(2, burst/2)
+	}
 	if d := s.Limiter.Allow(key, rate, burst); d > 0 {
+		if s.Limiter.Allow("audit429:"+s.ip(r), 1.0/60, 1) == 0 {
+			ctx, cancel := context.WithTimeout(r.Context(), 250*time.Millisecond)
+			s.Audit(ctx, "rate-limit", s.ip(r), "throttled")
+			cancel()
+		}
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
 		fail(w, 429, "rate_limited", "Too many attempts. Wait and try again.", "درخواست‌ها زیاد است؛ کمی صبر کنید و دوباره تلاش کنید.")
 		return true
@@ -347,6 +370,11 @@ func (s *Server) newSession(ctx context.Context, tx pgx.Tx, w http.ResponseWrite
 	return nil
 }
 func (s *Server) mfa(w http.ResponseWriter, r *http.Request) {
+	if d := s.lock(r.Context(), "mfa:"+s.ip(r)); d > 0 && !inCIDRs(s.ip(r), s.settingsCopy().Trusted) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
+		fail(w, 429, "rate_limited", "Wait before trying another code.", "برای آزمون کد بعدی کمی صبر کنید.")
+		return
+	}
 	var q struct {
 		Code   string `json:"code"`
 		Method string `json:"method"`

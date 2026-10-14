@@ -50,7 +50,7 @@ func testServer(t *testing.T) (*Server, *httptest.Server, *http.Client) {
 	if _, e = p.Exec(ctx, b); e != nil {
 		t.Fatal(e)
 	}
-	s := &Server{Config: Config{Key: make([]byte, 32), Static: testUI()}, DB: p, Limiter: newLimiter(), dummy: secure.Password("synthetic-dummy-password"), passwordSlots: make(chan struct{}, 2), connected: emptyConnections(), settings: Settings{Language: "en", Profile: "standard"}}
+	s := &Server{Config: Config{Key: make([]byte, 32), Static: testUI()}, DB: p, Limiter: newLimiter(), dummy: secure.Password("synthetic-dummy-password"), passwordSlots: make(chan struct{}, 2), agentSlots: make(chan struct{}, 8), connected: emptyConnections(), settings: Settings{Language: "en", Profile: "standard"}}
 	if e = s.InitAdmin(ctx, "testadmin", "Synthetic-Password-2026!"); e != nil {
 		t.Fatal(e)
 	}

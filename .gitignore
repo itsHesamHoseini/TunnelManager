@@ -17,3 +17,10 @@ credentials.once
 
 internal/ui/dist/
 *.tsbuildinfo
+
+/tunnelmanager
+/compose.yaml
+/nginx.conf
+/Dockerfile
+/.dockerignore
+/installation.json

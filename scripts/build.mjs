@@ -1,0 +1,3 @@
+import {spawnSync}from'node:child_process';import fs from'node:fs';import{createHash}from'node:crypto';
+const go=process.env.TUNNELMANAGER_GO_BINARY||'go';fs.mkdirSync('artifacts',{recursive:true});let sums='';
+for(const arch of ['amd64','arm64']){const name='tunnelmanager-linux-'+arch;const r=spawnSync(go,['build','-trimpath','-o','artifacts/'+name,'./cmd/tunnelmanager'],{env:{...process.env,GOOS:'linux',GOARCH:arch,CGO_ENABLED:'0'},stdio:'inherit',windowsHide:true});if(r.status)process.exit(r.status);sums+=createHash('sha256').update(fs.readFileSync('artifacts/'+name)).digest('hex')+'  '+name+'\n'}fs.writeFileSync('artifacts/SHA256SUMS',sums);console.log('Static Linux artifacts and checksums built. Native architecture evidence is separate.');

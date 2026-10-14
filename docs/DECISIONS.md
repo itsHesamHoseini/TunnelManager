@@ -7,3 +7,6 @@ D4: CSS design tokens and reusable React controls preserve the restrained visual
 D5: Initial account must enroll TOTP before ordinary API access. Telegram approval is optional, TOTP/recovery remains available during messaging outages.
 D6: Existing shared reverse proxies are preserved. Cutover disables only the previous panel site and panel unit after a working replacement and rollback snapshot exist.
 D7: Production is never used for fault injection. Native deployment is normal-path evidence; clean OS/failure tests run in CI on isolated disposable machines.
+
+D8: Enrollment token is pasted into a hidden prompt instead of shell arguments/history. Command and token are supplied separately; the security tradeoff adds one paste.
+D9: UI polls visible pages every 15 seconds; agent uses persistent TLS WebSocket and 30-second host samples. No extra collector or queue.

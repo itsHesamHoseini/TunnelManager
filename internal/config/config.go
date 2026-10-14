@@ -1,14 +1,18 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 )
 
 type Config struct {
+	PublicURL  string `json:"public_url,omitempty"`
 	Mode       string `json:"mode"`
 	Domain     string `json:"domain"`
 	Port       int    `json:"port"`
@@ -37,7 +41,30 @@ func Load(path string) (Config, error) {
 	if e != nil {
 		return c, e
 	}
-	e = json.Unmarshal(b, &c)
+	if len(b) > 65536 {
+		return c, fmt.Errorf("config exceeds 64 KiB")
+	}
+	if !json.Valid(b) {
+		var v map[string]any
+		if e = yaml.Unmarshal(b, &v); e != nil {
+			return c, fmt.Errorf("config is not valid JSON/YAML")
+		}
+		b, e = json.Marshal(v)
+		if e != nil {
+			return c, e
+		}
+	}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	e = d.Decode(&c)
+	if e == nil {
+		var extra any
+		if e = d.Decode(&extra); e == io.EOF {
+			e = nil
+		} else if e == nil {
+			e = fmt.Errorf("multiple config values")
+		}
+	}
 	return c, e
 }
 func Write(path string, c Config) error {
@@ -72,6 +99,9 @@ func Atomic(path string, b []byte, mode os.FileMode) error {
 	return os.Rename(tmp.Name(), path)
 }
 func (c Config) Origin() string {
+	if c.PublicURL != "" {
+		return c.PublicURL
+	}
 	if c.Port == 443 {
 		return "https://" + c.Domain
 	}

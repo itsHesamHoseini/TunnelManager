@@ -2,6 +2,7 @@
 set -eu
 mkdir -p .runtime/compose .runtime/config/tls
 cp internal/deploy/templates/* .runtime/compose/
+cp internal/deploy/templates/.dockerignore .runtime/compose/
 CGO_ENABLED=0 go build -o .runtime/compose/tunnelmanager ./cmd/tunnelmanager
 openssl rand 32 > .runtime/config/master.key
 openssl rand -hex 24 | tr -d '\n' > .runtime/config/db-password
@@ -9,7 +10,13 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout .runtime/config/tls/ke
 printf '{"domain":"localhost","port":9443,"config_dir":"/config","database":"db","language":"en"}' > .runtime/config/controller.json
 export TUNNELMANAGER_CONFIG_DIR="$(pwd)/.runtime/config"
 export TUNNELMANAGER_BIND=127.0.0.1
-trap 'docker compose -f .runtime/compose/compose.yaml down -v' EXIT
+export TUNNELMANAGER_DOMAIN=localhost
+cleanup() {
+  result=$?
+  if [ "$result" -ne 0 ]; then docker compose -f .runtime/compose/compose.yaml logs --tail 40 edge controller; fi
+  docker compose -f .runtime/compose/compose.yaml down -v
+}
+trap cleanup EXIT
 docker compose -f .runtime/compose/compose.yaml up -d --build --wait --wait-timeout 120
-curl --fail --cacert .runtime/config/tls/cert.pem https://localhost:9443/healthz
-test "$(curl --silent --cacert .runtime/config/tls/cert.pem -o /dev/null -w '%{http_code}' https://localhost:9443/api/me)" = 401
+curl --fail --retry 3 --retry-all-errors --retry-delay 1 --cacert .runtime/config/tls/cert.pem https://127.0.0.1:9443/healthz
+test "$(curl --silent --cacert .runtime/config/tls/cert.pem -o /dev/null -w '%{http_code}' https://127.0.0.1:9443/api/me)" = 401

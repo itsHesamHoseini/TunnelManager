@@ -176,6 +176,19 @@ func (s *Server) nodeHistory(w http.ResponseWriter, r *http.Request) {
 	write(w, items)
 }
 func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
+	handshakeHeld := true
+	select {
+	case s.agentSlots <- struct{}{}:
+		defer func() {
+			if handshakeHeld {
+				<-s.agentSlots
+			}
+		}()
+	default:
+		w.Header().Set("Retry-After", "10")
+		fail(w, 429, "agent_capacity", "Retry enrollment/connection in ten seconds.", "۱۰ ثانیه بعد دوباره تلاش کنید.")
+		return
+	}
 	if s.limited(w, r, "agent-connect:"+s.ip(r), .1, 10) {
 		return
 	}
@@ -209,6 +222,8 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusPolicyViolation, "pending approval or invalid identity")
 		return
 	}
+	<-s.agentSlots
+	handshakeHeld = false
 	s.mu.Lock()
 	if _, exists := s.connected[auth.NodeID]; exists || len(s.connected) >= 100 {
 		s.mu.Unlock()

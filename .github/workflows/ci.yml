@@ -31,3 +31,5 @@ jobs:
       - run: gitleaks git . --log-opts="--all" --redact --no-banner
       - run: gitleaks dir . --redact --no-banner
       - run: sh scripts/compose-smoke.sh
+
+      - run: sh scripts/installer-smoke.sh

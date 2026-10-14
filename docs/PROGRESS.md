@@ -10,3 +10,5 @@ Repository visibility was discovered to be public via GitHub API after the M1 pu
 User reply: continuing milestone pushes to the existing public repository is explicitly authorized. Visibility stays unchanged.
 
 CI run 38645811734 failed before tests: the workstation npm registry mirror was inherited in lockfile URLs and timed out on GitHub. Lockfile download URLs now use the public official npm registry with unchanged package integrity hashes. No tests were removed or disabled. Native Compose still awaits the corrected CI run.
+
+M2 implementation checkpoint: single CLI with previewed setup/repair, validated TLS modes, hidden inputs, terminal TOTP QR/recovery and optional Telegram, native Docker lifecycle, protected snapshots, independent encrypted backup, transaction-safe restore, verified local binary update and uninstall. Signed native node runtime is staged for M3. Native clean/fault installer evidence awaits CI; live CA/Cloudflare/Telegram and ARM64 are untested. No production cutover yet.

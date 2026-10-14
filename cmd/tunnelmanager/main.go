@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/itsHesamHoseini/TunnelManager/internal/agent"
 	"github.com/itsHesamHoseini/TunnelManager/internal/config"
 	"github.com/itsHesamHoseini/TunnelManager/internal/controller"
+	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"github.com/itsHesamHoseini/TunnelManager/internal/ui"
 	"net/http"
 	"os"
@@ -30,6 +34,19 @@ func run(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "agent":
+		f := flag.NewFlagSet("agent", flag.ContinueOnError)
+		p := f.String("config", "/etc/tunnelmanager-agent/node.json", "Native agent config")
+		if e := f.Parse(args[1:]); e != nil {
+			return e
+		}
+		c, e := config.Load(*p)
+		if e != nil {
+			return fmt.Errorf("node configuration unavailable")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return agent.Run(ctx, c)
 	case "version":
 		fmt.Println("TunnelManager", version)
 		return nil
@@ -39,10 +56,26 @@ func run(args []string) error {
 	case "healthcheck":
 		f := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
 		u := f.String("url", "http://127.0.0.1:8080/healthz", "Health endpoint")
+		ca := f.String("ca", "", "Explicit CA file")
+		serverName := f.String("server-name", "", "TLS server name for local health checks")
 		if e := f.Parse(args[1:]); e != nil {
 			return e
 		}
 		c := http.Client{Timeout: 2 * time.Second}
+		if *ca != "" {
+			b, e := os.ReadFile(*ca)
+			if e != nil {
+				return fmt.Errorf("health trust unavailable")
+			}
+			pool, _ := x509.SystemCertPool()
+			if pool == nil {
+				pool = x509.NewCertPool()
+			}
+			if !pool.AppendCertsFromPEM(b) {
+				return fmt.Errorf("invalid health CA")
+			}
+			c.Transport = &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool, ServerName: *serverName}}
+		}
 		r, e := c.Get(*u)
 		if e != nil {
 			return fmt.Errorf("health endpoint unavailable")
@@ -52,7 +85,7 @@ func run(args []string) error {
 			return fmt.Errorf("controller not ready")
 		}
 		return nil
-	case "serve", "bootstrap-admin":
+	case "serve", "bootstrap-admin", "reset-admin-internal", "enrollment-internal":
 		f := flag.NewFlagSet(args[0], flag.ContinueOnError)
 		p := f.String("config", "/etc/tunnelmanager/controller.json", "Runtime configuration path")
 		if e := f.Parse(args[1:]); e != nil {
@@ -77,6 +110,49 @@ func run(args []string) error {
 			return fmt.Errorf("controller startup failed (check database and key)")
 		}
 		defer s.Close()
+		if args[0] == "reset-admin-internal" {
+			var q struct {
+				Password string
+				ResetMFA bool
+			}
+			if e = json.NewDecoder(os.Stdin).Decode(&q); e != nil || len(q.Password) < 16 {
+				return fmt.Errorf("password input invalid")
+			}
+			tx, e := s.DB.Begin(ctx)
+			if e != nil {
+				return e
+			}
+			defer tx.Rollback(ctx)
+			if _, e = tx.Exec(ctx, "UPDATE admins SET password_hash=$1 WHERE id=1", secure.Password(q.Password)); e != nil {
+				return e
+			}
+			if q.ResetMFA {
+				tx.Exec(ctx, "UPDATE admins SET totp=NULL,totp_step=-1 WHERE id=1")
+				tx.Exec(ctx, "DELETE FROM recovery")
+			}
+			if _, e = tx.Exec(ctx, "DELETE FROM sessions; DELETE FROM challenges;"); e != nil {
+				return e
+			}
+			if e = tx.Commit(ctx); e != nil {
+				return e
+			}
+			s.Audit(ctx, "admin-password-reset", "", "success")
+			return nil
+		}
+		if args[0] == "enrollment-internal" {
+			var q struct {
+				Name, Role  string
+				AutoApprove bool
+			}
+			if e = json.NewDecoder(os.Stdin).Decode(&q); e != nil {
+				return fmt.Errorf("enrollment input invalid")
+			}
+			token, e := s.CreateEnrollment(ctx, q.Name, q.Role, q.AutoApprove)
+			if e != nil {
+				return e
+			}
+			return json.NewEncoder(os.Stdout).Encode(map[string]string{"token": token})
+		}
 		if args[0] == "bootstrap-admin" {
 			var q struct{ Username, Password string }
 			if e = json.NewDecoder(os.Stdin).Decode(&q); e != nil {
@@ -99,7 +175,7 @@ func run(args []string) error {
 		}
 		return e
 	default:
-		return fmt.Errorf("command belongs to the installer milestone; not available yet")
+		return lifecycle(args)
 	}
 }
 func help() {
