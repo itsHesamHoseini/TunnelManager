@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS schema_version(version integer PRIMARY KEY);
+INSERT INTO schema_version VALUES(1) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS admins(id integer PRIMARY KEY CHECK(id=1),username text UNIQUE NOT NULL,password_hash text NOT NULL,totp bytea,totp_step bigint NOT NULL DEFAULT -1);
+CREATE TABLE IF NOT EXISTS recovery(hash text PRIMARY KEY,used boolean NOT NULL DEFAULT false);
+CREATE TABLE IF NOT EXISTS sessions(hash text PRIMARY KEY,created timestamptz NOT NULL DEFAULT now(),expires timestamptz NOT NULL,ip text NOT NULL,ua text NOT NULL);
+CREATE TABLE IF NOT EXISTS challenges(hash text PRIMARY KEY,expires timestamptz NOT NULL,kind text NOT NULL,secret bytea,approved boolean NOT NULL DEFAULT false,ip text NOT NULL,ua text NOT NULL);
+CREATE TABLE IF NOT EXISTS auth_failures(key text PRIMARY KEY,failures integer NOT NULL,until_time timestamptz NOT NULL,updated timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS audit(id bigserial PRIMARY KEY,at timestamptz NOT NULL DEFAULT now(),action text NOT NULL,target text NOT NULL DEFAULT '',result text NOT NULL);
+CREATE TABLE IF NOT EXISTS settings(id integer PRIMARY KEY CHECK(id=1),encrypted bytea NOT NULL);
+CREATE TABLE IF NOT EXISTS enrollment(hash text PRIMARY KEY,expires timestamptz NOT NULL,name text NOT NULL,role text NOT NULL,auto_approve boolean NOT NULL DEFAULT false,consumed boolean NOT NULL DEFAULT false);
+CREATE TABLE IF NOT EXISTS nodes(id text PRIMARY KEY,name text NOT NULL,role text NOT NULL,pubkey bytea NOT NULL,approved boolean NOT NULL DEFAULT false,created timestamptz NOT NULL DEFAULT now(),seen timestamptz,telemetry jsonb,metadata jsonb NOT NULL DEFAULT '{}',reconnects integer NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS measurements(id bigserial PRIMARY KEY,node_id text REFERENCES nodes(id) ON DELETE CASCADE,at timestamptz NOT NULL DEFAULT now(),data jsonb NOT NULL);
+CREATE INDEX IF NOT EXISTS measurements_node_at ON measurements(node_id,at DESC);

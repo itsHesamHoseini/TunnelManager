@@ -1,0 +1,1 @@
+import{spawnSync}from'node:child_process';for(const command of [['node',['scripts/neutrality.mjs']],['node',['scripts/secrets.mjs']],['go',['test','-p','1','./...']],['go',['vet','./...']]]){const r=spawnSync(command[0],command[1],{stdio:'inherit',shell:false});if(r.status!==0)process.exit(r.status||1)}

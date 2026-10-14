@@ -1,0 +1,70 @@
+name: tunnelmanager
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: tunnelmanager-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tunnelmanager
+      POSTGRES_DB: tunnelmanager
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-password
+    secrets: [db-password]
+    volumes: [database:/var/lib/postgresql]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tunnelmanager"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    mem_limit: 512m
+    cpus: 0.75
+    logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
+  controller:
+    image: tunnelmanager-controller:local
+    build: {context: ., dockerfile: Dockerfile}
+    container_name: tunnelmanager-controller
+    command: [serve, --config, /config/controller.json]
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    volumes:
+      - "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}:/config:ro"
+      - "/etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro"
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp:size=16m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, /tunnelmanager, healthcheck, --url, "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    mem_limit: 256m
+    cpus: 0.5
+    logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
+  edge:
+    image: nginx:1.28-alpine
+    container_name: tunnelmanager-edge
+    restart: unless-stopped
+    depends_on:
+      controller: {condition: service_healthy}
+    ports: ["${TUNNELMANAGER_BIND:-0.0.0.0}:${TUNNELMANAGER_PORT:-9443}:9443"]
+    volumes:
+      - "./nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/tls:/tls:ro"
+    networks: [internal]
+    read_only: true
+    tmpfs: [/var/cache/nginx:size=16m, /var/run:size=1m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 64m
+    cpus: 0.25
+    logging: {driver: json-file, options: {max-size: 10m, max-file: "3"}}
+secrets:
+  db-password:
+    file: "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/db-password"
+volumes:
+  database: {name: tunnelmanager-database}
+networks:
+  internal: {name: tunnelmanager-internal, driver: bridge}
