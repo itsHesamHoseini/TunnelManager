@@ -17,6 +17,7 @@ jobs:
         with: {node-version: 24}
       - run: npm ci --prefix web && npm run build --prefix web
       - run: CGO_ENABLED=0 go build -o .runtime/tunnelmanager ./cmd/tunnelmanager
+      - run: CGO_ENABLED=0 go build -tags integrationfault -o .runtime/tunnelmanager-fault ./cmd/tunnelmanager
       - name: Isolated disposable systemd machine
         env:
           BASE_IMAGE: ${{ matrix.image }}
@@ -28,6 +29,7 @@ jobs:
           docker run -d --name tunnelmanager-ci-clean --privileged --cgroupns=host --tmpfs /run --tmpfs /run/lock --tmpfs /var/lib/docker --tmpfs /var/lib/containerd -v /sys/fs/cgroup:/sys/fs/cgroup:rw tunnelmanager-ci-clean
           docker exec tunnelmanager-ci-clean mkdir -p /work
           docker cp .runtime/tunnelmanager tunnelmanager-ci-clean:/work/tunnelmanager
+          docker cp .runtime/tunnelmanager-fault tunnelmanager-ci-clean:/work/tunnelmanager-fault
           docker cp scripts/clean-os-smoke.sh tunnelmanager-ci-clean:/work/clean-os-smoke.sh
           docker exec -e CI=true tunnelmanager-ci-clean sh /work/clean-os-smoke.sh || { docker exec tunnelmanager-ci-clean journalctl -u docker --no-pager -n 30; exit 1; }
       - if: always()

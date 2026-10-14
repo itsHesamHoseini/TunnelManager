@@ -314,6 +314,9 @@ func (s *Server) lock(ctx context.Context, key string) time.Duration {
 func (s *Server) bad(ctx context.Context, key, action string) {
 	s.DB.Exec(ctx, `INSERT INTO auth_failures(key,failures,until_time)VALUES($1,1,now()+interval '1 second') ON CONFLICT(key) DO UPDATE SET failures=CASE WHEN auth_failures.updated<now()-interval '15 minutes' THEN 1 ELSE LEAST(auth_failures.failures+1,5) END,until_time=now()+CASE WHEN auth_failures.failures>=4 THEN interval '15 minutes' ELSE interval '1 second'*power(2,LEAST(auth_failures.failures,3)) END,updated=now()`, key)
 	s.Audit(ctx, action, "", "denied")
+	if s.lock(ctx, key) > time.Minute {
+		s.Audit(ctx, "auth-lockout", "", "temporary")
+	}
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var q struct{ Username, Password string }
@@ -340,6 +343,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	case s.passwordSlots <- struct{}{}:
 		defer func() { <-s.passwordSlots }()
 	default:
+		w.Header().Set("Retry-After", "2")
 		fail(w, 429, "busy", "Try again shortly.", "کمی بعد دوباره تلاش کنید.")
 		return
 	}

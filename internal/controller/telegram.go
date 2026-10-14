@@ -95,6 +95,7 @@ func (s *Server) TelegramLoop(ctx context.Context) {
 		if !st.TelegramEnabled {
 			continue
 		}
+		s.notifySecurity(ctx)
 		b, e := s.bot(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": []string{"callback_query"}, "limit": 20})
 		if e != nil {
 			continue
@@ -142,5 +143,25 @@ func (s *Server) TelegramLoop(ctx context.Context) {
 			}
 			s.bot(ctx, "answerCallbackQuery", map[string]string{"callback_query_id": q.ID, "text": result})
 		}
+	}
+}
+
+// One bounded notification per five minutes; persisted audit timestamps prevent
+// resending old violations after a controller restart. No credentials in messages.
+func (s *Server) notifySecurity(ctx context.Context) {
+	st := s.settingsCopy()
+	if !st.TelegramEnabled || st.TelegramToken == "" {
+		return
+	}
+	var repeated bool
+	if s.DB.QueryRow(ctx, `SELECT count(*)>=2 OR COALESCE(bool_or(action='auth-lockout'),false) FROM audit WHERE action IN ('rate-limit','auth-lockout') AND at>now()-interval '15 minutes' AND at>COALESCE((SELECT max(at) FROM audit WHERE action='security-notification'),'-infinity'::timestamptz)`).Scan(&repeated) != nil || !repeated {
+		return
+	}
+	if s.Limiter.Allow("security-notification", 1.0/300, 1) > 0 {
+		return
+	}
+	_, e := s.bot(ctx, "sendMessage", map[string]any{"chat_id": st.ChatID, "text": "TunnelManager: repeated access limits detected. Review Security → Audit. / درخواست‌های مکرر محدود شدند؛ بخش امنیت و ثبت عملیات را بررسی کنید."})
+	if e == nil {
+		s.Audit(ctx, "security-notification", "", "sent")
 	}
 }

@@ -54,7 +54,11 @@ func fixtureNode(t *testing.T, s *Server, srv *httptest.Server, c *http.Client, 
 	b, _ = json.Marshal(protocol.Authentication{NodeID: "live-fixture", Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(key, []byte(msg)))})
 	conn.Write(ctx, websocket.MessageText, b)
 	value := 17.5
+	rate := 4096.0
 	d := protocol.Telemetry{At: time.Now(), OS: "Synthetic Ubuntu sample", CPU: &value, RAMTotal: 1073741824, RAMUsed: 268435456, DiskTotal: 10737418240, DiskFree: 5368709120, Processes: []protocol.Process{{PID: 42, Name: "backhaul-fixture", RAM: 8388608, Engine: true}}, Listeners: []protocol.Listener{{Address: "192.0.2.20:443", Protocol: "tcp", Process: "backhaul-fixture", PID: 42}, {Address: "192.0.2.20:5300", Protocol: "udp", Process: "fixture-other", PID: 50}}, SocketStates: map[string]int{"ESTAB": 4, "LISTEN": 2}, Services: []protocol.Service{{Name: "backhaul-fixture.service", Active: "active", Enabled: "enabled"}}}
+	d.Networks = []protocol.Network{{Name: "eth0", Primary: true, RX: 10000, TX: 20000, RXRate: &rate, TXRate: &rate}}
+	older, _ := json.Marshal(d)
+	s.DB.Exec(ctx, "INSERT INTO measurements(node_id,at,data)VALUES('live-fixture',now()-interval '30 seconds',$1)", older)
 	b, _ = json.Marshal(protocol.Frame{Type: "telemetry", Version: 1, Data: &d})
 	conn.Write(ctx, websocket.MessageText, b)
 	if _, _, e = conn.Read(ctx); e != nil {

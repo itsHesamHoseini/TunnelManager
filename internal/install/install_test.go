@@ -68,3 +68,55 @@ func TestTLSNameAndKeys(t *testing.T) {
 		t.Fatal("valid certificate rejected")
 	}
 }
+
+func TestOwnedDatabasePurge(t *testing.T) {
+	c := config.Default()
+	c.Domain = "panel.example.com"
+	c.Dir = t.TempDir()
+	c.ConfigDir = filepath.Join(c.Dir, "config")
+	c.DataDir = filepath.Join(c.Dir, "data")
+	target := filepath.Join(c.DataDir, "postgres")
+	if PurgeData(c) == nil {
+		t.Fatal("unowned data purge accepted")
+	}
+	if e := PrepareData(c, false); e != nil {
+		t.Fatal(e)
+	}
+	os.WriteFile(filepath.Join(target, "synthetic.db"), []byte("fixture"), 0600)
+	keep := filepath.Join(c.DataDir, "keep.backup")
+	os.WriteFile(keep, []byte("fixture"), 0600)
+	other := c
+	other.ConfigDir = filepath.Join(c.Dir, "other")
+	if PurgeData(other) == nil {
+		t.Fatal("other installation purged data")
+	}
+	if e := PurgeData(c); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := os.Stat(target); !os.IsNotExist(e) {
+		t.Fatal("owned postgres subtree retained")
+	}
+	if _, e := os.Stat(keep); e != nil {
+		t.Fatal("unrelated backup removed")
+	}
+	os.MkdirAll(target, 0700)
+	os.WriteFile(filepath.Join(target, "unowned.db"), []byte("fixture"), 0600)
+	if PrepareData(c, false) == nil {
+		t.Fatal("populated unowned data adopted")
+	}
+}
+
+func TestDataSymlinkRefused(t *testing.T) {
+	c := config.Default()
+	c.Domain = "panel.example.com"
+	c.Dir = t.TempDir()
+	c.ConfigDir = filepath.Join(c.Dir, "config")
+	c.DataDir = filepath.Join(c.Dir, "data")
+	external := t.TempDir()
+	if e := os.Symlink(external, c.DataDir); e != nil {
+		t.Skip("symlink creation unavailable on this platform")
+	}
+	if PrepareData(c, false) == nil || PurgeData(c) == nil {
+		t.Fatal("symlink data directory accepted")
+	}
+}

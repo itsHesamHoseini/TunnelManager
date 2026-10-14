@@ -38,3 +38,32 @@ func TestTelegramFixedEndpointAndExpiredChallenge(t *testing.T) {
 		t.Fatal("expired challenge sent approval")
 	}
 }
+
+func TestSecurityNotificationCooldownAndRestart(t *testing.T) {
+	s, _, _ := testServer(t)
+	s.settings.TelegramToken = "1:synthetic-fixture"
+	s.settings.ChatID = "123456"
+	s.settings.TelegramEnabled = true
+	old := telegramHTTP
+	defer func() { telegramHTTP = old }()
+	called := 0
+	telegramHTTP = &http.Client{Transport: fixtureTransport(func(r *http.Request) (*http.Response, error) {
+		called++
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":{}}`)), Header: make(http.Header)}, nil
+	})}
+	ctx := context.Background()
+	s.Audit(ctx, "rate-limit", "", "throttled")
+	s.Audit(ctx, "rate-limit", "", "throttled")
+	s.notifySecurity(ctx)
+	s.notifySecurity(ctx)
+	if called != 1 {
+		t.Fatal("security notice duplicated", called)
+	}
+	// New violations remain bounded, even if polling repeats immediately.
+	s.Audit(ctx, "rate-limit", "", "throttled")
+	s.Audit(ctx, "rate-limit", "", "throttled")
+	s.notifySecurity(ctx)
+	if called != 1 {
+		t.Fatal("notification cooldown bypassed")
+	}
+}

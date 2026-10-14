@@ -272,7 +272,7 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 		return e
 	}
 	i.Progress("Step 2 of 5: TLS and deployment files")
-	if e = os.MkdirAll(filepath.Join(c.DataDir, "postgres"), 0700); e != nil {
+	if e = PrepareData(c, existing); e != nil {
 		return e
 	}
 	if e = i.TLS(ctx, c); e != nil {
