@@ -426,6 +426,11 @@ func lifecycle(args []string) error {
 			args = append(args, "--volumes")
 		}
 		_, e = i.Compose(ctx, c, args, nil)
+		if e == nil {
+			if target, err := os.Readlink("/usr/local/bin/tunnelmanager"); err == nil && target == filepath.Join(c.Dir, "tunnelmanager") {
+				os.Remove("/usr/local/bin/tunnelmanager")
+			}
+		}
 		return e
 	}
 	return fmt.Errorf("unknown command %q; use --help", command)

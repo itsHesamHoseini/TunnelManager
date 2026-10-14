@@ -98,6 +98,9 @@ func uninstallNode(ctx context.Context, c config.Config, keep bool) error {
 	if e != nil {
 		return e
 	}
+	if target, err := os.Readlink("/usr/local/bin/tunnelmanager"); err == nil && target == filepath.Join(c.Dir, "tunnelmanager") {
+		os.Remove("/usr/local/bin/tunnelmanager")
+	}
 	if !keep {
 		if c.ConfigDir != "/etc/tunnelmanager-agent" {
 			return errors.New("non-default node data preserved; inspect manually")

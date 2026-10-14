@@ -107,6 +107,12 @@ func Preflight(c config.Config) []string {
 		if _, e := Run(ctx, "docker", []string{"compose", "version"}, nil); e != nil {
 			checks = append(checks, "FAIL: Docker/Compose unavailable; use the official signed apt installer")
 		}
+		if b, e := Run(ctx, "docker", []string{"inspect", "--format", "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}", "tunnelmanager-edge"}, nil); e == nil {
+			owner := strings.TrimSpace(string(b))
+			if owner != "" && filepath.Clean(owner) != filepath.Clean(c.Dir) {
+				checks = append(checks, "FAIL: another controller owns the explicit container namespace; repair that directory or uninstall it first")
+			}
+		}
 		owned, e := config.Load(filepath.Join(c.Dir, "installation.json"))
 		if e != nil || owned.Port != c.Port || owned.Bind != c.Bind {
 			ln, e := net.Listen("tcp", net.JoinHostPort(c.Bind, fmt.Sprint(c.Port)))
