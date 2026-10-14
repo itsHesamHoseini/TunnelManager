@@ -26,7 +26,7 @@ import (
 var input = bufio.NewReader(os.Stdin)
 
 func ask(label, def string) (string, error) {
-	fmt.Printf("%s [%s]: ", label, def)
+	fmt.Printf("%s [%s]: ", cliLabel(label), def)
 	s, e := input.ReadString('\n')
 	if e != nil && s == "" {
 		return "", e
@@ -38,7 +38,7 @@ func ask(label, def string) (string, error) {
 	return s, nil
 }
 func secret(label string) (string, error) {
-	fmt.Print(label + ": ")
+	fmt.Print(cliLabel(label) + ": ")
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		b, e := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Println()
@@ -60,6 +60,7 @@ func lifecycle(args []string) error {
 			c = installed
 		}
 	}
+	detectedMode, detectedDir := c.Mode, c.Dir
 	for i, a := range args {
 		if a == "--config" && i+1 < len(args) {
 			loaded, e := config.Load(args[i+1])
@@ -119,6 +120,7 @@ func lifecycle(args []string) error {
 	ctx, done := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer done()
 	i := install.New()
+	cliLanguage = c.Language
 	if command == "setup" {
 		if runtime.GOOS != "linux" {
 			return errors.New("setup requires Linux; use help for deployment options")
@@ -129,6 +131,7 @@ func lifecycle(args []string) error {
 				return e
 			}
 			c.Language = v
+			cliLanguage = v
 			v, e = ask("Mode (controller/node)", c.Mode)
 			if e != nil {
 				return e
@@ -150,6 +153,7 @@ func lifecycle(args []string) error {
 				}
 			}
 		}
+		fmt.Println(cliLabel("Step 2 of 7 — Prerequisites"))
 		for _, x := range install.Preflight(c) {
 			fmt.Println(x)
 		}
@@ -255,6 +259,10 @@ func lifecycle(args []string) error {
 		return linkCLI(c)
 	}
 	if c.Mode == "node" {
+		if detectedMode == "controller" && c.Dir == detectedDir {
+			c.Dir = "/opt/tunnelmanager-agent"
+			c.ConfigDir = "/etc/tunnelmanager-agent"
+		}
 		if c.Dir == "/opt/tunnelmanager" {
 			c.Dir = "/opt/tunnelmanager-agent"
 		}
@@ -280,7 +288,20 @@ func lifecycle(args []string) error {
 		if c.Mode == "controller" {
 			b, err := i.Compose(ctx, c, []string{"ps", "--format", "json"}, nil)
 			if err == nil {
-				report["containers"] = string(b)
+				containers := []map[string]string{}
+				for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+					var v map[string]any
+					if json.Unmarshal([]byte(line), &v) == nil {
+						item := map[string]string{}
+						for _, field := range []string{"Name", "State", "Health", "Service"} {
+							if value, ok := v[field].(string); ok {
+								item[field] = value
+							}
+						}
+						containers = append(containers, item)
+					}
+				}
+				report["containers"] = containers
 			}
 			_, err = i.Compose(ctx, c, []string{"exec", "-T", "controller", "/tunnelmanager", "healthcheck"}, nil)
 			report["controller_healthy"] = err == nil

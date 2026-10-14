@@ -20,7 +20,9 @@ done
 [ "$count" -ge 2 ]
 sudo docker exec tunnelmanager-db psql -U tunnelmanager -d tunnelmanager -Atc "select json_build_object('nodes',count(*),'approved',bool_and(approved),'ram_observed',bool_and((telemetry->>'ram_total')::bigint>0),'processes_observed',bool_and(jsonb_array_length(telemetry->'processes')>0)) from nodes"
 test "$(sudo docker exec tunnelmanager-db psql -U tunnelmanager -d tunnelmanager -Atc "select count(*) from nodes where approved and (telemetry->>'ram_total')::bigint>0")" = 1
-sudo .runtime/native doctor --mode node
+sudo "$dest/tunnelmanager" doctor --mode node | tee .runtime/node-doctor.json
+grep '"agent_active": true' .runtime/node-doctor.json
+grep '"mode": "node"' .runtime/node-doctor.json
 sudo .runtime/native setup --yes --config "$dest/installation.json" --with-local-node
 test "$(sudo docker exec tunnelmanager-db psql -U tunnelmanager -d tunnelmanager -Atc 'select count(*) from nodes')" = 1
 echo "Native systemd/outbound TLS identity/repeated setup/real host samples passed."

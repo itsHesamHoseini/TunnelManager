@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) error {
+func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) (err error) {
 	wasInstalled := false
 	if unit, e := os.ReadFile("/etc/systemd/system/tunnelmanager-agent.service"); e == nil {
 		if !strings.Contains(string(unit), "Description=TunnelManager outbound node agent") {
@@ -30,9 +30,33 @@ func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) error {
 	if c.ConfigDir == "/etc/tunnelmanager" {
 		c.ConfigDir = "/etc/tunnelmanager-agent"
 	}
+	if strings.ContainsAny(c.Dir+c.ConfigDir, " \t\n\r\"") {
+		return errors.New("native unit paths must not contain whitespace or quotes")
+	}
+	if e := install.Validate(c); e != nil {
+		return e
+	}
+	if wasInstalled {
+		unit, _ := os.ReadFile("/etc/systemd/system/tunnelmanager-agent.service")
+		expected := "ExecStart=" + filepath.Join(c.Dir, "tunnelmanager") + " agent --config " + filepath.Join(c.ConfigDir, "node.json")
+		if !strings.Contains(string(unit), expected+"\n") {
+			return errors.New("existing agent belongs to different directories; repair its installation marker explicitly")
+		}
+	}
 	if os.Geteuid() != 0 {
 		return errors.New("native node setup requires sudo/root")
 	}
+	rollback, e := nodeRollback(c, wasInstalled)
+	if e != nil {
+		return e
+	}
+	defer func() {
+		if err != nil {
+			if recoveryErr := rollback(); recoveryErr != nil {
+				err = errors.New("node rollback could not be confirmed; protected snapshot retained")
+			}
+		}
+	}()
 	if c.Controller == "" {
 		v, e := ask("Controller HTTPS origin", "")
 		if e != nil {
@@ -79,6 +103,9 @@ func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) error {
 	if e = config.Atomic("/etc/systemd/system/tunnelmanager-agent.service", []byte(unit), 0644); e != nil {
 		return e
 	}
+	if e = install.Checkpoint("node-after-unit"); e != nil {
+		return e
+	}
 	if _, e = install.Run(ctx, "systemctl", []string{"daemon-reload"}, nil); e != nil {
 		return e
 	}
@@ -93,7 +120,7 @@ func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) error {
 	if e = config.Write(filepath.Join(c.Dir, "installation.json"), c); e != nil {
 		return e
 	}
-	fmt.Println("Node installed. Waiting for explicit identity approval in the panel.")
+	fmt.Println("Node installed. Review identity approval and connection in the panel.")
 	if key, e := os.ReadFile(c.Identity); e == nil && len(key) == 64 {
 		fmt.Println("Node public identity:", secure.Fingerprint(ed25519.PrivateKey(key).Public().(ed25519.PublicKey)))
 	}

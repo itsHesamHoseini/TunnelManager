@@ -53,8 +53,17 @@ type Installer struct {
 	Progress func(string)
 }
 
+// The production build's checkpoint cannot inject a fault; CI opts into a separate build tag.
+func Checkpoint(point string) error { return installationFault(point) }
+
 func New() *Installer { return &Installer{Run: Run, Progress: func(s string) { fmt.Println(s) }} }
 func Validate(c config.Config) error {
+	if c.Language != "en" && c.Language != "fa" {
+		return errors.New("language must be en or fa")
+	}
+	if c.Profile != "standard" && c.Profile != "strict" {
+		return errors.New("profile must be standard or strict")
+	}
 	if net.ParseIP(c.Bind) == nil {
 		return errors.New("bind must be an IP address")
 	}
