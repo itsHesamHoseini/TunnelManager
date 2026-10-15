@@ -1,5 +1,11 @@
 # Progress
 2026-10-15 (Asia/Tehran).
+Current checkpoint: M1–M3 implemented, built, deployed and verified, with the explicit provider/platform limits below. Native Verify run 38657847358 and clean Ubuntu 22.04/24.04/Debian 12 run 38657847337 passed for runtime source 25aba46. This includes verified bootstrap/checksum rejection, native password reset, retained/purged-data reinstall, actual backup/restore/fault rollback, edge 429/profile reload and systemd node telemetry. Real PostgreSQL/Chrome tests and full tracked/history scans passed. A further PostgreSQL API test verifies mismatched and repeated identity approval are rejected.
+
+Final deployed controller and native agent match the reviewed artifact checksums. One approved node, fresh signed acknowledgements and more than fifty real host samples are recorded; only the HTTPS edge is published by the stack. All seven protected systemd unit states/PIDs remain unchanged. A later supervisor-driven application child restart and its traffic-limit/expiration log evidence are recorded separately; its listener is active and remained stable afterward. No application configuration/restart was performed by this project.
+
+Owner action: retrieve initial credentials privately and enroll TOTP personally. Real Telegram/ACME/DNS, Debian 11 and native ARM64 are untested. M4–M6 remain outstanding; M3 does not implement tunnel creation/control. See REQUIREMENTS.md and M1-M3-REPORT.md for exact acceptance evidence. Earlier entries below are chronological investigation notes, superseded by this checkpoint.
+
 M0 completed: clean upstream README-only repository, current main fetched; no unrelated service changes. Dedicated repository deployment key created outside checkout.
 M1–M3 authorized and in progress. Previous software remains running until staged replacement passes health checks. Production host parameters remain runtime-only.
 

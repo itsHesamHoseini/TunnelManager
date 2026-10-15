@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"github.com/coder/websocket"
 	"github.com/itsHesamHoseini/TunnelManager/internal/protocol"
+	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"testing"
 	"time"
 )
@@ -92,5 +93,30 @@ func TestSignedChannelRejectsPendingAndAcceptsApproved(t *testing.T) {
 	conn.Write(ctx, websocket.MessageText, data)
 	if _, _, e = conn.Read(ctx); e == nil {
 		t.Fatal("arbitrary action accepted")
+	}
+}
+
+func TestApprovalRequiresMatchingFingerprint(t *testing.T) {
+	s, srv, c := testServer(t)
+	enrollMFA(t, srv, c)
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	s.DB.Exec(context.Background(), "INSERT INTO nodes(id,name,role,pubkey,approved)VALUES('approval-fixture','Synthetic approval','iran',$1,false)", pub)
+	path := srv.URL + "/api/nodes/approval-fixture/approve"
+	status, _ := request(t, c, path, "POST", map[string]string{"fingerprint": "SHA256:wrong-fixture"})
+	if status != 409 {
+		t.Fatal("mismatched identity approved", status)
+	}
+	var approved bool
+	s.DB.QueryRow(context.Background(), "SELECT approved FROM nodes WHERE id='approval-fixture'").Scan(&approved)
+	if approved {
+		t.Fatal("rejected approval changed node state")
+	}
+	status, _ = request(t, c, path, "POST", map[string]string{"fingerprint": secure.Fingerprint(pub)})
+	if status != 200 {
+		t.Fatal("matching identity rejected", status)
+	}
+	status, _ = request(t, c, path, "POST", map[string]string{"fingerprint": secure.Fingerprint(pub)})
+	if status != 409 {
+		t.Fatal("duplicate approval accepted", status)
 	}
 }

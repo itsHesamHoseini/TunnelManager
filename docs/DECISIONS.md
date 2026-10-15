@@ -1,5 +1,5 @@
 # Decisions
-2026-10-15: The user authorized M1–M3, private milestone pushes and installer deployment. The existing clean main commit is the sole history base; no previous history is imported.
+2026-10-15: The user authorized M1–M3 and installer deployment. The repository was initially described as private; after the API showed it public, the user explicitly authorized further public milestone pushes. Visibility was not changed. The existing clean main commit is the sole history base; no previous history is imported.
 D1: Native agents initiate outbound TLS WebSocket; typed actions only. No SSH edits.
 D2: PostgreSQL is the durable authority for sessions, enrollment, audit and measurements. No Redis.
 D3: Single static Go CLI embeds UI and deployment templates. A small line-oriented wizard has explicit steps, inline validation, masked passwords and NO_COLOR support; external terminal frameworks are unnecessary.
@@ -10,3 +10,5 @@ D7: Production is never used for fault injection. Native deployment is normal-pa
 
 D8: Enrollment token is pasted into a hidden prompt instead of shell arguments/history. Command and token are supplied separately; the security tradeoff adds one paste.
 D9: UI polls visible pages every 15 seconds; agent uses persistent TLS WebSocket and 30-second host samples. No extra collector or queue.
+D10: The owner's production TOTP enrollment and recovery-code storage are performed personally; automation does not impersonate that owner or capture authentication material to create deployment screenshots.
+D11: Retained-data reinstall starts only the owned database before snapshotting. Explicit purge removes only its verified database subtree and obsolete marker/initial credentials. Configuration/data relocation uses verified backup/restore into a fresh installation.
