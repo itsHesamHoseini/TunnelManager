@@ -38,4 +38,11 @@ if sudo env TUNNELMANAGER_TEST_FAULT=after-start .runtime/installer update --dir
 fi
 sudo curl --fail --cacert "$conf/tls/cert.pem" https://127.0.0.1:9443/healthz
 sudo .runtime/installer config show --dir "$dest"
+sudo .runtime/installer uninstall --dir "$dest" --yes --keep-data=true
+sudo .runtime/installer setup --yes --config "$dest/installation.json"
+test "$before" = "$(sudo sha256sum "$conf/master.key" | cut -d ' ' -f 1)"
+sudo .runtime/installer uninstall --dir "$dest" --yes --keep-data=false
+test ! -f "$dest/installation.json"
+printf '%s\n' 'Synthetic-Reinstalled-Password!' | sudo .runtime/installer setup --yes --password-stdin --domain 127.0.0.1 --bind 127.0.0.1 --dir "$dest" --config-dir "$conf" --admin testadmin
+sudo curl --fail --cacert "$conf/tls/cert.pem" https://127.0.0.1:9443/healthz
 echo "Native installer rerun, encrypted backup/restore, fault update rollback and uninstall passed."

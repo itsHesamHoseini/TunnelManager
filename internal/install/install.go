@@ -217,6 +217,15 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 	}
 	_, existsErr := os.Stat(filepath.Join(c.Dir, "installation.json"))
 	existing := existsErr == nil
+	if existing {
+		old, e := config.Load(filepath.Join(c.Dir, "installation.json"))
+		if e != nil {
+			return errors.New("existing installation marker invalid; existing data preserved")
+		}
+		if filepath.Clean(old.ConfigDir) != filepath.Clean(c.ConfigDir) || filepath.Clean(old.DataDir) != filepath.Clean(c.DataDir) {
+			return errors.New("runtime/data relocation requires a verified backup and explicit restore into a fresh installation; existing directories preserved")
+		}
+	}
 	os.MkdirAll(c.Dir, 0700)
 	os.MkdirAll(c.ConfigDir, 0700)
 	snapshot, e := Snapshot(c)
@@ -224,6 +233,10 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 		return e
 	}
 	if existing {
+		// Kept-data uninstall can leave the stack stopped; start only its own DB before backup.
+		if _, e = i.Compose(ctx, c, []string{"up", "-d", "--wait", "--wait-timeout", "120", "db"}, nil); e != nil {
+			return errors.New("owned database could not start for the protected snapshot")
+		}
 		if _, e = i.Compose(ctx, c, []string{"stop", "controller", "edge"}, nil); e != nil {
 			return e
 		}

@@ -9,6 +9,7 @@ The controller and approved native host agent are deployed through the project's
 - Clean Ubuntu 22.04/24.04/Debian 12 CI: Docker installed via fingerprint-verified signed apt packages, native systemd agent, repeat setup, backup/restore, failed-update rollback and owned database removal. Disposable nested Docker uses private filesystem backing; no production kernel/Docker changes were used for these tests.
 - Normal deployment: existing matching public certificate reused; only edge 9443 exposed by the stack; independent native agent with real CPU/RAM/process/listener/socket/service samples. Seven protected services and the application listener kept their PIDs through cutover. SSH remained usable.
 - No old service/configuration was adopted into tunnel management. The old panel site and panel unit alone were disabled, with dated root-only backups and its previous database/key retained.
+- Follow-up observation: after the initial verified cutover, the application supervisor rewrote its own configuration and replaced its child application process. Its logs contain traffic-limit/expiration handling and removed entries; no kernel OOM was recorded. The supervisor and all seven protected systemd units retained their PIDs. No application configuration or restart command was issued by this installer/agent; causality beyond the supervisor's recorded events is not claimed. The listener remained active; its private evidence stays on the host.
 
 ## Operator review
 

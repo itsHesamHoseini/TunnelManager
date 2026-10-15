@@ -450,6 +450,12 @@ func lifecycle(args []string) error {
 		_, e = i.Compose(ctx, c, args, nil)
 		if e == nil && !*keep {
 			e = install.PurgeData(c)
+			if e == nil {
+				if removeErr := os.Remove(filepath.Join(c.Dir, "installation.json")); removeErr != nil && !os.IsNotExist(removeErr) {
+					e = removeErr
+				}
+				os.Remove(filepath.Join(c.ConfigDir, "credentials.once"))
+			}
 		}
 		if e == nil {
 			if target, err := os.Readlink("/usr/local/bin/tunnelmanager"); err == nil && target == filepath.Join(c.Dir, "tunnelmanager") {
