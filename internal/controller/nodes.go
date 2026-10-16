@@ -256,7 +256,7 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 	s.connected[auth.NodeID] = c
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.connected, auth.NodeID); s.mu.Unlock() }()
-	s.DB.Exec(r.Context(), "UPDATE nodes SET reconnects=reconnects+1 WHERE id=$1", auth.NodeID)
+	s.DB.Exec(r.Context(), "UPDATE nodes SET reconnects=reconnects+1,protocol=$2 WHERE id=$1", auth.NodeID, max(1, auth.Protocol))
 	s.Audit(r.Context(), "node-connect", auth.NodeID, "authenticated")
 	last := time.Time{}
 	for {
@@ -266,13 +266,35 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 		if e != nil {
 			return
 		}
-		if time.Since(last) < 10*time.Second {
+		if auth.Protocol < 2 && time.Since(last) < 10*time.Second {
 			c.Close(websocket.StatusPolicyViolation, "telemetry rate exceeded")
 			return
 		}
 		var frame protocol.Frame
-		if json.Unmarshal(b, &frame) != nil || frame.Version != 1 || frame.Type != "telemetry" || frame.Data == nil {
+		if json.Unmarshal(b, &frame) != nil || (frame.Version != 1 && frame.Version != 2) {
 			c.Close(websocket.StatusPolicyViolation, "unknown typed action")
+			return
+		}
+		if frame.Version == 2 {
+			if auth.Protocol < 2 || s.acceptResults(r.Context(), auth.NodeID, frame.Results) != nil {
+				return
+			}
+			if frame.Type == "poll" {
+				ack, _ := json.Marshal(protocol.Ack{Type: "accepted", Command: s.deliverCommand(r.Context(), auth.NodeID)})
+				writeCtx, done := context.WithTimeout(r.Context(), 5*time.Second)
+				e = c.Write(writeCtx, websocket.MessageText, ack)
+				done()
+				if e != nil {
+					return
+				}
+				continue
+			}
+		}
+		if frame.Type != "telemetry" || frame.Data == nil {
+			return
+		}
+		if time.Since(last) < 10*time.Second {
+			c.Close(websocket.StatusPolicyViolation, "telemetry rate exceeded")
 			return
 		}
 		data := frame.Data
@@ -317,7 +339,11 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		last = time.Now()
-		ack, _ := json.Marshal(map[string]string{"type": "accepted"})
+		var response any = map[string]string{"type": "accepted"}
+		if frame.Version == 2 {
+			response = protocol.Ack{Type: "accepted", Command: s.deliverCommand(r.Context(), auth.NodeID)}
+		}
+		ack, _ := json.Marshal(response)
 		writeCtx, done := context.WithTimeout(r.Context(), 5*time.Second)
 		e = c.Write(writeCtx, websocket.MessageText, ack)
 		done()

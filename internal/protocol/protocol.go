@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type Hello struct {
 	Expires time.Time `json:"expires"`
 }
 type Authentication struct {
+	Protocol  int    `json:"protocol,omitempty"`
 	NodeID    string `json:"node_id"`
 	Signature string `json:"signature"`
 }
@@ -19,6 +21,24 @@ type Frame struct {
 	Type    string     `json:"type"`
 	Version int        `json:"version"`
 	Data    *Telemetry `json:"data,omitempty"`
+	Results []Result   `json:"results,omitempty"`
+}
+
+type Command struct {
+	ID      string          `json:"id"`
+	Kind    string          `json:"kind"`
+	Expires time.Time       `json:"expires"`
+	Payload json.RawMessage `json:"payload"`
+}
+type Result struct {
+	ID   string          `json:"id"`
+	OK   bool            `json:"ok"`
+	Code string          `json:"code,omitempty"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
+type Ack struct {
+	Type    string   `json:"type"`
+	Command *Command `json:"command,omitempty"`
 }
 type Process struct {
 	PID    int      `json:"pid"`

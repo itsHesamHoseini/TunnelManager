@@ -12,6 +12,7 @@ import (
 	"errors"
 	"github.com/coder/websocket"
 	"github.com/itsHesamHoseini/TunnelManager/internal/config"
+	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
 	"github.com/itsHesamHoseini/TunnelManager/internal/protocol"
 	"io"
 	"net/http"
@@ -155,37 +156,48 @@ func connection(ctx context.Context, c config.Config, key ed25519.PrivateKey, cl
 		return errors.New("controller challenge invalid")
 	}
 	message := c.NodeID + "\n" + h.Nonce + "\n" + h.Expires.UTC().Format(time.RFC3339Nano)
-	auth := protocol.Authentication{NodeID: c.NodeID, Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(key, []byte(message)))}
+	auth := protocol.Authentication{Protocol: 2, NodeID: c.NodeID, Signature: base64.RawURLEncoding.EncodeToString(ed25519.Sign(key, []byte(message)))}
 	b, _ = json.Marshal(auth)
 	if e = conn.Write(authCtx, websocket.MessageText, b); e != nil {
 		return e
 	}
-	ticker := time.NewTicker(30 * time.Second)
+
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	ops := nodeops.New(c)
+	nextSample := time.Time{}
+	pending := []protocol.Result{}
 	for {
-		data := sampler.Collect(ctx)
-		b, e = json.Marshal(protocol.Frame{Type: "telemetry", Version: 1, Data: &data})
-		if e != nil || len(b) > protocol.MaxFrame {
-			return errors.New("measurement exceeds safe protocol frame")
+		frame := protocol.Frame{Type: "poll", Version: 2, Results: pending}
+		if !time.Now().Before(nextSample) {
+			data := sampler.Collect(ctx)
+			ops.Observe(ctx, data)
+			frame.Type = "telemetry"
+			frame.Data = &data
+			nextSample = time.Now().Add(30 * time.Second)
 		}
-		sendCtx, done := context.WithTimeout(ctx, 10*time.Second)
+		b, e = json.Marshal(frame)
+		if e != nil || len(b) > protocol.MaxFrame {
+			return errors.New("measurement/result exceeds safe protocol frame")
+		}
+		sendCtx, done := context.WithTimeout(ctx, 12*time.Second)
 		e = conn.Write(sendCtx, websocket.MessageText, b)
 		if e == nil {
 			_, b, e = conn.Read(sendCtx)
-			if e == nil {
-				var ack struct {
-					Type string `json:"type"`
-				}
-				if json.Unmarshal(b, &ack) != nil || ack.Type != "accepted" {
-					e = errors.New("unknown controller action rejected")
-				}
-			}
 		}
 		done()
 		if e != nil {
 			return e
 		}
+		var ack protocol.Ack
+		if json.Unmarshal(b, &ack) != nil || ack.Type != "accepted" {
+			return errors.New("unknown controller message rejected")
+		}
+		pending = nil
 		saveStatus("connected", time.Now())
+		if ack.Command != nil {
+			pending = append(pending, ops.Execute(ctx, *ack.Command))
+		}
 		select {
 		case <-ctx.Done():
 			return nil

@@ -89,6 +89,11 @@ func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) (err er
 	if e := os.MkdirAll(c.Dir, 0700); e != nil {
 		return e
 	}
+	for _, p := range []string{filepath.Join(c.ConfigDir, "instances"), filepath.Join(c.ConfigDir, "certificates"), "/opt/tunnelmanager/engines"} {
+		if e := os.MkdirAll(p, 0700); e != nil {
+			return e
+		}
+	}
 	exe, e := os.Executable()
 	if e != nil {
 		return e
@@ -96,7 +101,7 @@ func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) (err er
 	if e = install.CopyFile(exe, filepath.Join(c.Dir, "tunnelmanager"), 0755); e != nil {
 		return e
 	}
-	unit := "[Unit]\nDescription=TunnelManager outbound node agent\nAfter=network-online.target\nWants=network-online.target\n[Service]\nType=simple\nExecStart=" + filepath.Join(c.Dir, "tunnelmanager") + " agent --config " + filepath.Join(c.ConfigDir, "node.json") + "\nRestart=on-failure\nRestartSec=10\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nProtectKernelTunables=true\nProtectControlGroups=true\nMemoryMax=96M\nCPUQuota=15%\nTasksMax=32\nStateDirectory=tunnelmanager-agent\nStateDirectoryMode=0700\nReadWritePaths=/var/lib/tunnelmanager-agent\n[Install]\nWantedBy=multi-user.target\n"
+	unit := "[Unit]\nDescription=TunnelManager outbound node agent\nAfter=network-online.target\nWants=network-online.target\n[Service]\nType=simple\nExecStart=" + filepath.Join(c.Dir, "tunnelmanager") + " agent --config " + filepath.Join(c.ConfigDir, "node.json") + "\nRestart=on-failure\nRestartSec=10\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nProtectKernelTunables=true\nProtectControlGroups=true\nMemoryMax=96M\nCPUQuota=15%\nTasksMax=32\nStateDirectory=tunnelmanager-agent\nStateDirectoryMode=0700\nReadWritePaths=/var/lib/tunnelmanager-agent " + c.ConfigDir + " /opt/tunnelmanager/engines /etc/systemd/system\n[Install]\nWantedBy=multi-user.target\n"
 	if strings.ContainsAny(c.Dir+c.ConfigDir, " \t\n\r\"") {
 		return errors.New("native unit paths must not contain whitespace or quotes")
 	}

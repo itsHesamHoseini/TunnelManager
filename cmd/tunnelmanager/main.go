@@ -10,6 +10,7 @@ import (
 	"github.com/itsHesamHoseini/TunnelManager/internal/agent"
 	"github.com/itsHesamHoseini/TunnelManager/internal/config"
 	"github.com/itsHesamHoseini/TunnelManager/internal/controller"
+	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"github.com/itsHesamHoseini/TunnelManager/internal/ui"
 	"net/http"
@@ -34,6 +35,17 @@ func run(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "local-rollback":
+		f := flag.NewFlagSet("local-rollback", flag.ContinueOnError)
+		id := f.String("id", "", "Owned change ID")
+		dir := f.String("config-dir", "/etc/tunnelmanager-agent", "Node config directory")
+		if e := f.Parse(args[1:]); e != nil {
+			return e
+		}
+		ops := nodeops.New(config.Config{ConfigDir: *dir})
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		return ops.Rollback(ctx, *id)
 	case "edge":
 		return edge(args[1:])
 	case "agent":
@@ -164,6 +176,7 @@ func run(args []string) error {
 		}
 		go s.TelegramLoop(ctx)
 		go s.Maintenance(ctx)
+		go s.Operations(ctx)
 		srv := http.Server{Addr: ":8080", Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 		go func() {
 			<-ctx.Done()
