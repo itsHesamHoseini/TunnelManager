@@ -15,3 +15,5 @@ D11: Retained-data reinstall starts only the owned database before snapshotting.
 
 D12: M4-M6 use documented role-scoped options; unsupported identity/proxy/mapping semantics remain read-only instead of lossy conversion. Shared/batch actions validate revisions and execute distinct instances once. Independent local systemd timers handle config, certificate and temporary-logging restoration. Certificate policy CAS is independent from issuance revisions; renewal keeps the PKCS12 password used by existing consumers.
 D13: M6 standardizes version 0.6.0 and Go 1.27.2, embeds source commit without build timestamps, and gates publication on exact-source native checks. No extra runtime service is introduced. Checksums are verified; no upstream signature is claimed for Rathole's older fixed artifacts. Live provider behavior/native ARM64/Debian11 remain separately untested.
+
+D14: Normalize validated integral JSON numeric options to TOML integers at render time. Native multi-client tests exposed that TOML floats such as retry_interval=2.0 are rejected by the engines. Release89d9960 includes this correction; later evidence/test-only commits do not change its runtime code.

@@ -10,7 +10,7 @@ curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.
 less install.sh
 sudo sh install.sh setup --with-local-node
 ```
-The bootstrap verifies SHA256. The wizard previews changes, domain/IP, port (9443), TLS and account setup. Docker installation is explicit. Enroll TOTP personally and save recovery codes. See [release status and limits](docs/RELEASE-NOTES.md); before publication use a reviewed checkout:
+The bootstrap verifies SHA256. The wizard previews changes, domain/IP, port (9443), TLS and account setup. Docker installation is explicit. Enroll TOTP personally and save recovery codes. [v0.6.0 downloads](https://github.com/itsHesamHoseini/TunnelManager/releases/tag/v0.6.0) are published and bootstrap-tested. See [release limits](docs/RELEASE-NOTES.md). To build a reviewed checkout:
 ```sh
 npm ci --prefix web
 npm run build --prefix web

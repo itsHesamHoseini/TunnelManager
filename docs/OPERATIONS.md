@@ -34,6 +34,8 @@ Tunnel plans are separate: preflight → preview → prepare/backup both peers �
 
 Manual config drift: read current redacted configuration, compare with the registered revision, then explicitly revoke management (preserving files/unit), rediscover, import and adopt the reviewed evidence again. Unsupported versions/options remain read-only; never overwrite them merely to clear a warning.
 
+If recovery needs review because current files changed manually, explicitly preserving the current state disarms only that failed transaction's watchdogs and retains backups. It is not a successful rollback. Old affected revisions become observation-only until rediscovered/reimported/adopted. Revoking a certificate consumer pauses automatic deployment to prevent changing infrastructure outside current ownership.
+
 ## nginx
 The normal installer includes a dedicated nginx edge with TLS, limits and agent WebSocket forwarding. An extra host nginx site is unnecessary when using the configured HTTPS port. Existing host proxies/sites are preserved.
 
