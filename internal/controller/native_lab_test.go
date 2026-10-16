@@ -201,6 +201,26 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		t.Fatalf("native browser workflow failed: %v\n%s", e, out)
 	}
 	t.Log(string(out))
+	batchRevisions := map[string]int64{}
+	for _, name := range []string{"Synthetic native rathole noise", "Synthetic native backhaul tcp"} {
+		var id string
+		var rev int64
+		if s.DB.QueryRow(ctx, "SELECT id,revision FROM tunnels WHERE name=$1", name).Scan(&id, &rev) != nil {
+			t.Fatal("batch tunnel missing")
+		}
+		batchRevisions[id] = rev
+	}
+	status, batch := request(t, client, srv.URL+"/api/tunnel-actions", "POST", map[string]any{"RequestKey": "native_batch_restart", "Action": "restart", "Revisions": batchRevisions, "Confirm": true})
+	if status != 200 {
+		t.Fatal("native batch rejected")
+	}
+	batchID, _ := batch["operation_id"].(string)
+	wait(batchID)
+	var executed int
+	s.DB.QueryRow(ctx, "SELECT count(*) FROM commands WHERE operation_id=$1 AND kind='instance.action' AND state='completed'", batchID).Scan(&executed)
+	if executed != 4 {
+		t.Fatal("batch did not execute exactly once on four selected instances")
+	}
 	// Renew and deploy a new identity to every real TLS consumer. A stopped
 	// consumer must remain stopped throughout coordinated certificate rotation.
 	var tlsTunnel string

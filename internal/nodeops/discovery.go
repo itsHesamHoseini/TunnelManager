@@ -20,6 +20,7 @@ import (
 )
 
 type Discovered struct {
+	Logging  any             `json:"logging,omitempty"`
 	Linked   bool            `json:"linked"`
 	Recovery *RecoveryPolicy `json:"recovery,omitempty"`
 	Instance
@@ -131,12 +132,12 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 			}
 			d.Reason = p.Reason
 		}
-		if binary, e := readRegular(exe, 64*1024*1024); e == nil {
-			d.Fingerprint = engine.Digest(binary)
+		if fingerprint, e := fileDigest(exe); e == nil {
+			d.Fingerprint = fingerprint
 			for _, a := range engine.Catalog {
 				if a.Engine == name {
-					pinned, e := os.ReadFile(filepath.Join("/opt/tunnelmanager/engines", name, a.Version, name))
-					if e == nil && engine.Digest(pinned) == d.Fingerprint {
+					pinned, e := fileDigest(filepath.Join("/opt/tunnelmanager/engines", name, a.Version, name))
+					if e == nil && pinned == d.Fingerprint && verifiedBinary(filepath.Join("/opt/tunnelmanager/engines", name, a.Version, name), a) {
 						d.Version = a.Version
 						break
 					}
@@ -152,6 +153,9 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 			d.Adopted = own.Adopted
 			d.Stopped = own.Stopped
 			d.Disabled = own.Disabled
+			if j := r.logSession(own.ID); j != nil {
+				d.Logging = map[string]any{"session": strings.TrimPrefix(j.ID, "log_"), "until": j.Deadline}
+			}
 			var policy RecoveryPolicy
 			if b, e := os.ReadFile(r.file("recovery", own.ID+".json")); e == nil && json.Unmarshal(b, &policy) == nil {
 				d.Recovery = &policy

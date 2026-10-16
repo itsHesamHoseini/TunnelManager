@@ -39,8 +39,8 @@ func (s *Server) tunnelList(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, e)
 		return
 	}
-	defer rows.Close()
 	items := []map[string]any{}
+	records := []TunnelRecord{}
 	for rows.Next() {
 		var id, name, desired string
 		var rev int64
@@ -55,6 +55,12 @@ func (s *Server) tunnelList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		items = append(items, map[string]any{"id": id, "name": name, "revision": rev, "spec": engine.Public(record.Spec), "instances": record.Instances, "hashes": record.Hashes, "managed": managed, "desired": desired, "health": json.RawMessage(health), "updated": updated})
+		records = append(records, record)
+	}
+	rows.Close()
+	for i, rec := range records {
+		raw, _ := json.Marshal(items[i]["health"])
+		items[i]["health"] = s.currentHealth(r.Context(), raw, rec)
 	}
 	write(w, items)
 }
@@ -84,7 +90,28 @@ func (s *Server) tunnelDetail(w http.ResponseWriter, r *http.Request) {
 			versions = append(versions, map[string]any{"revision": rev, "at": at})
 		}
 	}
-	write(w, map[string]any{"id": r.PathValue("id"), "name": name, "desired": desired, "health": json.RawMessage(health), "configurations": configurations, "revision": revision, "managed": managed, "spec": engine.Public(record.Spec), "instances": record.Instances, "hashes": record.Hashes, "versions": versions})
+	if rows != nil {
+		rows.Close()
+	}
+	affected := []map[string]any{}
+	seen := map[string]bool{}
+	for node, instance := range record.Instances {
+		for _, t := range s.affected(r.Context(), node, instance) {
+			id, _ := t["id"].(string)
+			if !seen[id] {
+				seen[id] = true
+				affected = append(affected, t)
+			}
+		}
+	}
+	if managed {
+		plan := JobPayload{Tunnel: r.PathValue("id"), Name: name, Spec: record.Spec, Instances: record.Instances, Hashes: record.Hashes, ExpectedRevision: revision, Action: "preview"}
+		if s.expand(r.Context(), &plan) == nil {
+			affected = publicAffected(plan)
+		}
+	}
+
+	write(w, map[string]any{"id": r.PathValue("id"), "name": name, "desired": desired, "health": s.currentHealth(r.Context(), health, record), "configurations": configurations, "revision": revision, "managed": managed, "spec": engine.Public(record.Spec), "instances": record.Instances, "hashes": record.Hashes, "versions": versions, "affected_tunnels": affected})
 }
 func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 	var q struct {
@@ -558,24 +585,43 @@ func (s *Server) tunnelAction(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, errors.New("managed_revision_and_confirmation_required"))
 		return
 	}
-	if !strings.Contains("|start|stop|restart|reload|disable|remove|", "|"+q.Action+"|") {
+	if !strings.Contains("|start|stop|restart|reload|disable|remove|revoke|", "|"+q.Action+"|") {
 		badOperation(w, errors.New("invalid_action"))
 		return
 	}
-	id, e := s.newJob(r.Context(), q.RequestKey, "tunnel-action", r.PathValue("id"), q.Action, JobPayload{Tunnel: r.PathValue("id"), Spec: record.Spec, Instances: record.Instances, Hashes: record.Hashes, Action: q.Action, ExpectedRevision: rev, Confirm: true})
+	plan := JobPayload{Tunnel: r.PathValue("id"), Spec: record.Spec, Instances: record.Instances, Hashes: record.Hashes, Action: q.Action, ExpectedRevision: rev, Confirm: true}
+	s.DB.QueryRow(r.Context(), "SELECT name FROM tunnels WHERE id=$1", plan.Tunnel).Scan(&plan.Name)
+	if e = s.expand(r.Context(), &plan); e != nil {
+		badOperation(w, e)
+		return
+	}
+	id, e := s.newJob(r.Context(), q.RequestKey, "tunnel-action", r.PathValue("id"), q.Action, plan)
 	if e != nil {
 		badOperation(w, e)
 		return
 	}
-	write(w, map[string]any{"operation_id": id, "affected_routes": engine.Public(record.Spec).Routes})
+	write(w, map[string]any{"operation_id": id, "affected_tunnels": publicAffected(plan)})
 }
 func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayload) {
 	s.phase(ctx, id, "running", nil, nil)
-	for _, p := range s.changeParts(q) {
+	for _, update := range q.Updates {
+		_, revision, managed, e := s.readTunnel(ctx, update.ID)
+		if e != nil || !managed || revision != update.Revision {
+			s.phase(ctx, id, "failed", nil, errors.New("tunnel_revision_changed"))
+			return
+		}
+	}
+	parts := q.Parts
+	if len(parts) == 0 {
+		for _, p := range s.changeParts(q) {
+			parts = append(parts, ChangePart{Node: p.Node, Role: p.Role, Instance: q.Instances[p.Node], Hash: q.Hashes[p.Node]})
+		}
+	}
+	for _, p := range parts {
 		s.step(ctx, id, q.Action, p.Node, "running", "")
-		_, e := s.command(ctx, id, p.Node, "action", "instance.action", map[string]any{"ID": q.Instances[p.Node], "Action": q.Action, "ExpectedHash": q.Hashes[p.Node], "Confirm": true})
+		_, e := s.command(ctx, id, p.Node, "action_"+p.Instance, "instance.action", map[string]any{"ID": p.Instance, "Action": q.Action, "ExpectedHash": p.Hash, "Confirm": true})
 		if e != nil {
-			s.phase(ctx, id, "failed", map[string]any{"partial": true, "affected_routes": engine.Public(q.Spec).Routes}, e)
+			s.phase(ctx, id, "failed", map[string]any{"partial": true, "affected_tunnels": publicAffected(q)}, e)
 			return
 		}
 		s.step(ctx, id, q.Action, p.Node, "succeeded", "")
@@ -584,15 +630,22 @@ func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayloa
 	if q.Action == "stop" || q.Action == "disable" {
 		desired = q.Action
 	}
-	if q.Action == "remove" {
-		for node, instance := range q.Instances {
-			s.DB.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", node, instance)
-		}
-		s.DB.Exec(ctx, "DELETE FROM tunnels WHERE id=$1", q.Tunnel)
-	} else {
-		s.DB.Exec(ctx, "UPDATE tunnels SET desired=$1,updated=now() WHERE id=$2", desired, q.Tunnel)
+	if len(q.Updates) == 0 {
+		q.Updates = []TunnelUpdate{{ID: q.Tunnel}}
 	}
-	s.phase(ctx, id, "succeeded", map[string]any{"affected_routes": engine.Public(q.Spec).Routes}, nil)
+	if q.Action == "remove" || q.Action == "revoke" {
+		for _, p := range parts {
+			s.DB.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", p.Node, p.Instance)
+		}
+		for _, g := range q.Updates {
+			s.DB.Exec(ctx, "DELETE FROM tunnels WHERE id=$1", g.ID)
+		}
+	} else {
+		for _, g := range q.Updates {
+			s.DB.Exec(ctx, "UPDATE tunnels SET desired=$1,updated=now() WHERE id=$2", desired, g.ID)
+		}
+	}
+	s.phase(ctx, id, "succeeded", map[string]any{"affected_tunnels": publicAffected(q)}, nil)
 }
 func (s *Server) processAdoption(ctx context.Context, id string, q JobPayload) {
 	s.phase(ctx, id, "running", nil, nil)

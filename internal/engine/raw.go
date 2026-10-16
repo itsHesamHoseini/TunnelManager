@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 
@@ -92,46 +91,21 @@ func NormalizeRaw(s *Spec) error {
 		st, ct := table(server, "transport"), table(client, "transport")
 		if s.Transport == "noise" {
 			s.NoisePrivate = keep(text(table(st, "noise"), "local_private_key"), s.NoisePrivate)
-			if text(table(ct, "noise"), "remote_public_key") != s.NoisePublic {
+			if keep(text(table(ct, "noise"), "remote_public_key"), s.NoisePublic) != s.NoisePublic {
 				return errors.New("Noise peer identity changed; use the explicit key rotation flow")
 			}
 		}
-		for _, side := range []map[string]any{server, client} {
-			for k := range side {
-				if k != "bind_addr" && k != "remote_addr" && k != "default_token" && k != "services" && k != "transport" && k != "heartbeat_interval" && k != "heartbeat_timeout" && k != "retry_interval" {
-					return errors.New("unsupported raw Rathole option")
-				}
-			}
-			for _, v := range table(side, "services") {
-				m, ok := v.(map[string]any)
-				if !ok {
-					return errors.New("invalid service table")
-				}
-				for k := range m {
-					if k != "type" && k != "token" && k != "bind_addr" && k != "local_addr" && k != "nodelay" && k != "retry_interval" {
-						return errors.New("per-service advanced option requires a supported form field")
-					}
-				}
-			}
-		}
-	} else {
-		s.Advanced = map[string]any{}
-		for _, side := range []map[string]any{server, client} {
-			for k, v := range side {
-				switch k {
-				case "bind_addr", "remote_addr", "transport", "token", "ports", "log_level", "web_port", "sniffer", "skip_optz", "tls_cert", "tls_key":
-				default:
-					b, _ := json.Marshal(v)
-					var normalized any
-					json.Unmarshal(b, &normalized)
-					if !allowedAdvanced(s.Engine, k, normalized) {
-						return errors.New("unsupported raw Backhaul option")
-					}
-					s.Advanced[k] = normalized
-				}
-			}
-		}
 	}
+	s.PeerOptions = map[string]map[string]any{}
+	for role, side := range map[string]map[string]any{"server": server, "client": client} {
+		opts, e := Options(s.Engine, side)
+		if e != nil {
+			return e
+		}
+		s.PeerOptions[role] = opts
+	}
+	s.Advanced = nil
+
 	// Always re-render paths from an approved certificate ID; never honor arbitrary raw paths.
 	s.RawServer = ""
 	s.RawClient = ""

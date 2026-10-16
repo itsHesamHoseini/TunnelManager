@@ -142,7 +142,8 @@ func registryRawCheck(r *Runtime, id string) (string, error) {
 func (r *Runtime) RecoveryEvents() []map[string]any {
 	out := []map[string]any{}
 	entries, _ := os.ReadDir(r.file("events"))
-	for _, v := range entries {
+	for i := len(entries) - 1; i >= 0; i-- {
+		v := entries[i]
 		if len(out) >= 50 {
 			break
 		}

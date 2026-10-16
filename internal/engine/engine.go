@@ -41,27 +41,28 @@ type Route struct {
 	Token    string   `json:"token,omitempty"`
 }
 type Spec struct {
-	Application         *Probe         `json:"application,omitempty"`
-	Engine              string         `json:"engine"`
-	Version             string         `json:"version"`
-	Transport           string         `json:"transport"`
-	Listener            string         `json:"listener"`
-	Dialer              string         `json:"dialer"`
-	TransportBind       Endpoint       `json:"transport_bind"`
-	TransportRemote     Endpoint       `json:"transport_remote"`
-	Routes              []Route        `json:"routes"`
-	Token               string         `json:"token,omitempty"`
-	NoisePrivate        string         `json:"noise_private,omitempty"`
-	NoisePublic         string         `json:"noise_public,omitempty"`
-	Certificate         string         `json:"certificate,omitempty"`
-	CertificateHash     string         `json:"certificate_hash,omitempty"`
-	CertificateRevision int64          `json:"certificate_revision,omitempty"`
-	TLSName             string         `json:"tls_name,omitempty"`
-	PKCS12Password      string         `json:"pkcs12_password,omitempty"`
-	Advanced            map[string]any `json:"advanced,omitempty"`
-	AllowUnverifiedTLS  bool           `json:"allow_unverified_tls"`
-	RawServer           string         `json:"raw_server,omitempty"`
-	RawClient           string         `json:"raw_client,omitempty"`
+	PeerOptions         map[string]map[string]any `json:"peer_options,omitempty"`
+	Application         *Probe                    `json:"application,omitempty"`
+	Engine              string                    `json:"engine"`
+	Version             string                    `json:"version"`
+	Transport           string                    `json:"transport"`
+	Listener            string                    `json:"listener"`
+	Dialer              string                    `json:"dialer"`
+	TransportBind       Endpoint                  `json:"transport_bind"`
+	TransportRemote     Endpoint                  `json:"transport_remote"`
+	Routes              []Route                   `json:"routes"`
+	Token               string                    `json:"token,omitempty"`
+	NoisePrivate        string                    `json:"noise_private,omitempty"`
+	NoisePublic         string                    `json:"noise_public,omitempty"`
+	Certificate         string                    `json:"certificate,omitempty"`
+	CertificateHash     string                    `json:"certificate_hash,omitempty"`
+	CertificateRevision int64                     `json:"certificate_revision,omitempty"`
+	TLSName             string                    `json:"tls_name,omitempty"`
+	PKCS12Password      string                    `json:"pkcs12_password,omitempty"`
+	Advanced            map[string]any            `json:"advanced,omitempty"`
+	AllowUnverifiedTLS  bool                      `json:"allow_unverified_tls"`
+	RawServer           string                    `json:"raw_server,omitempty"`
+	RawClient           string                    `json:"raw_client,omitempty"`
 }
 type Probe struct {
 	Kind     string   `json:"kind"`
@@ -221,6 +222,20 @@ func Validate(s Spec) error {
 			return fmt.Errorf("unsupported or out-of-range advanced option: %s", k)
 		}
 	}
+	for role, opts := range s.PeerOptions {
+		if role != "server" && role != "client" {
+			return errors.New("invalid option role")
+		}
+		normalized, e := Options(s.Engine, opts)
+		if e != nil {
+			return e
+		}
+		b, _ := json.Marshal(opts)
+		c, _ := json.Marshal(normalized)
+		if string(b) != string(c) {
+			return errors.New("unsupported peer option")
+		}
+	}
 	return nil
 }
 func allowedAdvanced(e, k string, v any) bool {
@@ -367,6 +382,7 @@ func Render(s Spec, role string) (string, error) {
 			services[r.ID] = v
 		}
 	}
+	mergeOptions(side, s.PeerOptions[role])
 	b, e := toml.Marshal(cfg)
 	return string(b), e
 }

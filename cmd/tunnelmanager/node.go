@@ -10,6 +10,7 @@ import (
 	"github.com/itsHesamHoseini/TunnelManager/internal/agent"
 	"github.com/itsHesamHoseini/TunnelManager/internal/config"
 	"github.com/itsHesamHoseini/TunnelManager/internal/install"
+	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"os"
 	"path/filepath"
@@ -132,6 +133,9 @@ func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) (err er
 	return nil
 }
 func uninstallNode(ctx context.Context, c config.Config, keep bool) error {
+	if e := nodeops.New(c).PendingRollback(); e != nil {
+		return e
+	}
 	if _, e := install.Run(ctx, "systemctl", []string{"disable", "--now", "tunnelmanager-agent.service"}, nil); e != nil {
 		return e
 	}

@@ -340,7 +340,7 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 		json.Unmarshal(payload, &q)
 		s.DB.Exec(ctx, "INSERT INTO checks(node_id,target,kind,data)VALUES($1,$2,$3,$4)", node, q.Endpoint.String(), q.Kind, result.Data)
 	}
-	if kind == "instance.action" || kind == "recovery.policy" {
+	if kind == "instance.action" || kind == "recovery.policy" || kind == "logs.verbosity" {
 		s.DB.Exec(ctx, "UPDATE nodes SET inventory_at=NULL WHERE id=$1", node)
 	}
 	if kind == "recovery.policy" {
@@ -355,7 +355,7 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 	if kind == "instance.action" {
 		var action struct{ ID, Action string }
 		json.Unmarshal(payload, &action)
-		if action.Action == "remove" {
+		if action.Action == "remove" || action.Action == "revoke" {
 			s.DB.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", node, action.ID)
 		}
 		desired := "running"
@@ -363,6 +363,10 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 			desired = action.Action
 		}
 		for _, t := range s.affected(ctx, node, action.ID) {
+			if action.Action == "remove" || action.Action == "revoke" {
+				s.DB.Exec(ctx, "DELETE FROM tunnels WHERE id=$1", t["id"])
+				continue
+			}
 			s.DB.Exec(ctx, "UPDATE tunnels SET desired=$1 WHERE id=$2", desired, t["id"])
 		}
 	}
@@ -405,12 +409,12 @@ func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &q) {
 		return
 	}
-	allowed := map[string]bool{"inventory": true, "engine.install": true, "instance.config": true, "instance.status": true, "tools.status": true, "instance.action": true, "logs.read": true, "diagnostic": true, "recovery.policy": true}
+	allowed := map[string]bool{"inventory": true, "engine.install": true, "instance.config": true, "instance.status": true, "tools.status": true, "instance.action": true, "logs.read": true, "logs.verbosity": true, "diagnostic": true, "recovery.policy": true}
 	if !allowed[q.Kind] {
 		fail(w, 400, "typed_action_required", "Select an available action.", "یکی از عملیات مجاز را انتخاب کنید.")
 		return
 	}
-	if (q.Kind == "engine.install" || q.Kind == "recovery.policy" || q.Kind == "instance.action") && !q.Confirm {
+	if (q.Kind == "logs.verbosity" || q.Kind == "engine.install" || q.Kind == "recovery.policy" || q.Kind == "instance.action") && !q.Confirm {
 		fail(w, 400, "confirmation_required", "Review and confirm this change.", "اثر تغییر را بررسی و تأیید کنید.")
 		return
 	}

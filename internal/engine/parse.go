@@ -10,13 +10,14 @@ import (
 )
 
 type Parsed struct {
-	Role      string  `json:"role"`
-	Transport string  `json:"transport"`
-	Bind      string  `json:"bind"`
-	Remote    string  `json:"remote"`
-	Routes    []Route `json:"routes"`
-	Token     string  `json:"-"`
-	Reason    string  `json:"reason,omitempty"`
+	Options   map[string]any `json:"options,omitempty"`
+	Role      string         `json:"role"`
+	Transport string         `json:"transport"`
+	Bind      string         `json:"bind"`
+	Remote    string         `json:"remote"`
+	Routes    []Route        `json:"routes"`
+	Token     string         `json:"-"`
+	Reason    string         `json:"reason,omitempty"`
 }
 
 func text(m map[string]any, k string) string          { s, _ := m[k].(string); return s }
@@ -35,7 +36,15 @@ func ParseConfiguration(raw, name string) (Parsed, error) {
 	if side == nil {
 		return Parsed{}, errors.New("no server/client configuration found")
 	}
+	if table(m, "server") != nil && table(m, "client") != nil {
+		return Parsed{}, errors.New("both roles require explicit native role selection")
+	}
 	p := Parsed{Role: role, Bind: text(side, "bind_addr"), Remote: text(side, "remote_addr"), Routes: []Route{}}
+	if opts, e := Options(name, side); e != nil {
+		p.Reason = e.Error()
+	} else {
+		p.Options = opts
+	}
 	if name == "backhaul" {
 		p.Transport = text(side, "transport")
 		p.Token = text(side, "token")

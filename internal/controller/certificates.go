@@ -192,10 +192,21 @@ func (s *Server) readCertificate(ctx context.Context, id string) (CertificateReq
 	var cipher []byte
 	var rev int64
 	var q CertificateRequest
-	if e := s.DB.QueryRow(ctx, "SELECT cipher,revision FROM certificates WHERE id=$1", id).Scan(&cipher, &rev); e != nil {
+	var meta []byte
+	if e := s.DB.QueryRow(ctx, "SELECT cipher,revision,metadata FROM certificates WHERE id=$1", id).Scan(&cipher, &rev, &meta); e != nil {
 		return q, 0, errors.New("certificate_missing")
 	}
-	return q, rev, s.openValue("certificate:"+id, cipher, &q)
+	if e := s.openValue("certificate:"+id, cipher, &q); e != nil {
+		return q, rev, e
+	}
+	var policy struct {
+		AutoRenew  bool `json:"auto_renew"`
+		AutoDeploy bool `json:"auto_deploy"`
+	}
+	json.Unmarshal(meta, &policy)
+	q.AutoRenew = policy.AutoRenew
+	q.AutoDeploy = policy.AutoDeploy
+	return q, rev, nil
 }
 func (s *Server) certificateDeploy(w http.ResponseWriter, r *http.Request) {
 	var q struct {
@@ -295,7 +306,7 @@ func (s *Server) processCertificate(ctx context.Context, id string, q JobPayload
 		if q.ExpectedRevision == 0 {
 			_, e = s.DB.Exec(ctx, "INSERT INTO certificates(id,name,domain,cipher,not_after,issuer,method,metadata)VALUES($1,$2,$3,$4,$5,$6,$7,$8)", q.Certificate, req.Name, req.Domain, cipher, leaf.NotAfter, leaf.Issuer.String(), req.Method, meta)
 		} else {
-			tag, err := s.DB.Exec(ctx, "UPDATE certificates SET cipher=$1,revision=revision+1,not_after=$2,issuer=$3,metadata=$4,updated=now() WHERE id=$5 AND revision=$6", cipher, leaf.NotAfter, leaf.Issuer.String(), meta, q.Certificate, q.ExpectedRevision)
+			tag, err := s.DB.Exec(ctx, "UPDATE certificates SET cipher=$1,revision=revision+1,not_after=$2,issuer=$3,metadata=$4::jsonb || jsonb_build_object('auto_renew',CASE WHEN $9='acme' THEN metadata->'auto_renew' ELSE 'false'::jsonb END,'auto_deploy',metadata->'auto_deploy','policy_revision',COALESCE(metadata->'policy_revision','0'::jsonb)),name=$7,domain=$8,method=$9,updated=now() WHERE id=$5 AND revision=$6", cipher, leaf.NotAfter, leaf.Issuer.String(), meta, q.Certificate, q.ExpectedRevision, req.Name, req.Domain, req.Method)
 			e = err
 			if e == nil && tag.RowsAffected() != 1 {
 				e = errors.New("certificate_revision_changed")
@@ -306,7 +317,8 @@ func (s *Server) processCertificate(ctx context.Context, id string, q JobPayload
 			return
 		}
 		s.phase(ctx, id, "succeeded", map[string]any{"certificate_id": q.Certificate, "not_after": leaf.NotAfter, "private_material": "encrypted"}, nil)
-		if req.AutoDeploy {
+		latest, _, _ := s.readCertificate(ctx, q.Certificate)
+		if latest.AutoDeploy {
 			s.queueCertificateDeployment(ctx, q.Certificate, q.ExpectedRevision+1, req.Name)
 		}
 		return
@@ -332,11 +344,39 @@ func (s *Server) scheduleRenewals(ctx context.Context) {
 	}
 	rows.Close()
 	for _, v := range values {
-		var req CertificateRequest
-		if s.openValue("certificate:"+v.id, v.cipher, &req) != nil {
+		req, _, e := s.readCertificate(ctx, v.id)
+		if e != nil {
 			continue
 		}
 		b, _ := json.Marshal(req)
 		s.newJob(ctx, "renew_"+v.id+"_"+time.Now().UTC().Format("20060102"), "certificate", v.id, req.Name, JobPayload{Kind: "issue", Certificate: v.id, ExpectedRevision: v.rev, Payload: b})
 	}
+}
+
+func (s *Server) certificatePolicy(w http.ResponseWriter, r *http.Request) {
+	var q struct {
+		ExpectedRevision int64 `json:"expected_policy_revision"`
+		AutoRenew        bool  `json:"auto_renew"`
+		AutoDeploy       bool  `json:"auto_deploy"`
+		Confirm          bool  `json:"confirm"`
+	}
+	if !decode(w, r, &q) {
+		return
+	}
+	req, _, e := s.readCertificate(r.Context(), r.PathValue("id"))
+	if e != nil || !q.Confirm {
+		badOperation(w, errors.New("review_certificate_policy"))
+		return
+	}
+	if q.AutoRenew && req.Method != "acme" {
+		badOperation(w, errors.New("automatic_renewal_requires_acme"))
+		return
+	}
+	tag, e := s.DB.Exec(r.Context(), `UPDATE certificates SET metadata=metadata||jsonb_build_object('auto_renew',$1::bool,'auto_deploy',$2::bool,'policy_revision',$3::bigint+1),updated=now() WHERE id=$4 AND COALESCE((metadata->>'policy_revision')::bigint,0)=$3`, q.AutoRenew, q.AutoDeploy, q.ExpectedRevision, r.PathValue("id"))
+	if e != nil || tag.RowsAffected() != 1 {
+		badOperation(w, errors.New("certificate_policy_changed_refresh"))
+		return
+	}
+	s.Audit(r.Context(), "certificate-policy", req.Name, "updated")
+	write(w, map[string]any{"saved": true, "policy_revision": q.ExpectedRevision + 1})
 }

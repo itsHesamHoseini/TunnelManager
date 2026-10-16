@@ -106,6 +106,7 @@ func pairedSpec(listener, dialer string, a, b nodeops.Discovered) (engine.Spec, 
 		return engine.Spec{}, errors.New("transport_ports_disagree")
 	}
 	spec := engine.Spec{Engine: a.Engine, Version: a.Version, Transport: a.Parsed.Transport, Listener: listener, Dialer: dialer, TransportBind: bind, TransportRemote: remote, Routes: []engine.Route{}}
+	spec.PeerOptions = map[string]map[string]any{"server": a.Parsed.Options, "client": b.Parsed.Options}
 	if spec.Engine == "backhaul" {
 		spec.Routes = a.Parsed.Routes
 	} else {

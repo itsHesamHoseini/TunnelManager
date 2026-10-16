@@ -139,7 +139,7 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 	}
 	q.Parts = nil
 	for _, p := range parts {
-		if e := engine.Validate(p.Spec); e != nil {
+		if e := engine.Validate(p.Spec); e != nil && q.Action == "" {
 			return e
 		}
 		q.Parts = append(q.Parts, *p)
@@ -156,7 +156,7 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 func publicAffected(q JobPayload) []map[string]any {
 	out := []map[string]any{}
 	for _, g := range q.Updates {
-		out = append(out, map[string]any{"name": g.Name, "routes": engine.Public(g.Record.Spec).Routes})
+		out = append(out, map[string]any{"id": g.ID, "revision": g.Revision, "name": g.Name, "routes": engine.Public(g.Record.Spec).Routes})
 	}
 	return out
 }

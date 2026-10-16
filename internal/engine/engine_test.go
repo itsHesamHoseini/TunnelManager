@@ -8,6 +8,35 @@ import (
 func fixture(name string) Spec {
 	return Spec{Engine: name, Version: map[string]string{"rathole": "0.5.0", "backhaul": "0.7.2"}[name], Transport: "tcp", Listener: "listener", Dialer: "dialer", TransportBind: Endpoint{"0.0.0.0", 28100}, TransportRemote: Endpoint{"listener.example.com", 28100}, Token: "synthetic-token-not-a-credential", Routes: []Route{{ID: "one", Name: "First", User: Endpoint{"0.0.0.0", 24443}, Backend: Endpoint{"127.0.0.1", 2096}, Protocol: "tcp"}}}
 }
+func TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade(t *testing.T) {
+	s := fixture("rathole")
+	s.PeerOptions = map[string]map[string]any{"server": {"heartbeat_interval": float64(30), "transport": map[string]any{"tcp": map[string]any{"nodelay": true}}}, "client": {"retry_interval": float64(7), "services": map[string]any{"one": map[string]any{"nodelay": false}}}}
+	server, e := Render(s, "server")
+	if e != nil {
+		t.Fatal(e)
+	}
+	client, e := Render(s, "client")
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.RawServer = Redact(server)
+	s.RawClient = Redact(client)
+	if e = NormalizeRaw(&s); e != nil {
+		t.Fatal(e)
+	}
+	again, _ := Render(s, "client")
+	if !strings.Contains(again, "retry_interval = 7") || !strings.Contains(again, "nodelay = false") {
+		t.Fatal("scoped advanced options silently lost")
+	}
+	p, e := ParseConfiguration(server+"\n[server.transport.noise]\npattern='Noise_XX_25519_ChaChaPoly_BLAKE2s'\n", "rathole")
+	if e == nil && p.Reason == "" {
+		t.Fatal("unsupported mutual identity accepted for lossy conversion")
+	}
+	p, e = ParseConfiguration(server+"\n[client]\nremote_addr='example.com:28100'\n", "rathole")
+	if e == nil && p.Reason == "" {
+		t.Fatal("ambiguous dual role adopted")
+	}
+}
 func TestRoundTripAndThreeIndependentEndpoints(t *testing.T) {
 	for _, name := range []string{"backhaul", "rathole"} {
 		s := fixture(name)

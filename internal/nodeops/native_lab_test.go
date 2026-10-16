@@ -208,6 +208,11 @@ func TestNativeBothEngines(t *testing.T) {
 				require(node, "instance.action", map[string]any{"ID": instance[node], "Action": "start", "ExpectedHash": hashes[node], "Confirm": true})
 			}
 			checkHTTP(spec.Routes[0].User.Port)
+			require(a, "logs.verbosity", map[string]any{"ID": instance[a], "Session": name + "_logging", "ExpectedHash": hashes[a], "Seconds": 60, "Level": "debug", "Confirm": true})
+			// The persistent timer restores actual config/unit files with no executor.
+			time.Sleep(65 * time.Second)
+			require(a, "instance.action", map[string]any{"ID": instance[a], "Action": "restart", "ExpectedHash": hashes[a], "Confirm": true})
+			checkHTTP(spec.Routes[0].User.Port)
 			raw := run("exec", a, "cat", filepath.Join("/etc/tunnelmanager-agent/instances", instance[a]+".toml"))
 			raw = append(raw, []byte("\n# manual edit\n")...)
 			cmd := exec.CommandContext(ctx, "docker", "exec", "-i", a, "sh", "-c", "cat > /etc/tunnelmanager-agent/instances/"+instance[a]+".toml")

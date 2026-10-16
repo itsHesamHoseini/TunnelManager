@@ -228,6 +228,8 @@ func (r *Runtime) dispatch(ctx context.Context, kind string, b json.RawMessage) 
 		return map[string]any{"configuration": engine.Redact(string(raw)), "hash": engine.Digest(raw), "drift": v.Hash != engine.Digest(raw)}, nil
 	case "logs.read":
 		return r.logs(ctx, b)
+	case "logs.verbosity":
+		return r.verbosity(ctx, b)
 	case "instance.status":
 		return r.status(ctx, b)
 	case "tools.status":

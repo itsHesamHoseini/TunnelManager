@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -67,6 +68,9 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 	binary := filepath.Join("/opt/tunnelmanager/engines", q.Spec.Engine, q.Spec.Version, q.Spec.Engine)
 	if _, e := os.Stat(binary); e != nil {
 		return nil, errors.New("install_selected_engine_first")
+	}
+	if a, e := engine.ArtifactFor(q.Spec.Engine, q.Spec.Version, runtime.GOARCH); e != nil || !verifiedBinary(binary, a) {
+		return nil, errors.New("installed_engine_binary_changed_reinstall_verified_version")
 	}
 	var old *Instance
 	if v, e := r.load(q.Instance); e == nil {
@@ -411,6 +415,9 @@ func (r *Runtime) Rollback(ctx context.Context, id string) error {
 	if strings.HasPrefix(id, "cert_") {
 		return r.restoreCertificate(ctx, id)
 	}
+	if strings.HasPrefix(id, "log_") {
+		return r.restoreLogging(ctx, id)
+	}
 	return r.rollback(ctx, id)
 }
 func (r *Runtime) rollback(ctx context.Context, id string) error {
@@ -496,17 +503,24 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 	if e := decode(b, &q); e != nil {
 		return nil, e
 	}
-	if e := r.pending(q.ID, ""); e != nil {
+	if e := r.pending(q.ID, ""); e != nil && !(e.Error() == "restore_temporary_logging_before_changing_service" && (q.Action == "stop" || q.Action == "disable")) {
 		return nil, e
 	}
-	v, _, e := registryRaw(r, q.ID)
+	v, e := r.load(q.ID)
+	if q.Action != "revoke" {
+		v, _, e = registryRaw(r, q.ID)
+	}
 	if e != nil {
 		return nil, e
 	}
-	if q.ExpectedHash != v.Hash {
+	expected := q.ExpectedHash == v.Hash
+	if j := r.logSession(q.ID); j != nil && (q.Action == "stop" || q.Action == "disable") && q.ExpectedHash == j.Instance.Hash {
+		expected = true
+	}
+	if !expected {
 		return nil, errors.New("config_revision_conflict")
 	}
-	if !strings.Contains("|start|stop|restart|reload|disable|remove|", "|"+q.Action+"|") {
+	if !strings.Contains("|start|stop|restart|reload|disable|remove|revoke|", "|"+q.Action+"|") {
 		return nil, errors.New("unknown_instance_action")
 	}
 	if !q.Confirm {
@@ -528,6 +542,12 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 		v.Stopped = false
 	case "reload":
 		_, e = run(ctx, "systemctl", "reload", "--", v.Unit)
+	case "revoke":
+		if e = os.Remove(r.file("instances", v.ID+".json")); e != nil {
+			return nil, e
+		}
+		os.Remove(r.file("recovery", v.ID+".json"))
+		return map[string]any{"management_revoked": true, "unit_preserved": true, "configuration_preserved": true}, nil
 	case "remove":
 		if v.Adopted {
 			return nil, errors.New("adopted_instance_preserved_stop_or_revoke_instead")
@@ -553,6 +573,9 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 
 // A second operation cannot supersede a still armed local rollback.
 func (r *Runtime) pending(instance, except string) error {
+	if j := r.logSession(instance); j != nil && j.ID != except {
+		return errors.New("restore_temporary_logging_before_changing_service")
+	}
 	entries, _ := os.ReadDir(r.file("changes"))
 	for _, entry := range entries {
 		if entry.IsDir() {

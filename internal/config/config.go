@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 type Config struct {
@@ -97,7 +98,18 @@ func Atomic(path string, b []byte, mode os.FileMode) error {
 	if e != nil {
 		return e
 	}
-	return os.Rename(tmp.Name(), path)
+	if e = os.Rename(tmp.Name(), path); e != nil {
+		return e
+	}
+	if runtime.GOOS != "windows" {
+		dir, e := os.Open(filepath.Dir(path))
+		if e != nil {
+			return e
+		}
+		defer dir.Close()
+		return dir.Sync()
+	}
+	return nil
 }
 func (c Config) Origin() string {
 	if c.PublicURL != "" {
