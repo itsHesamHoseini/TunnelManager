@@ -1,0 +1,19 @@
+name: Native bounded diagnostics
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version-file: go.mod}
+      - name: Install the OS ping tool in this disposable runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq iputils-ping
+      - run: go test -tags nativelab -run TestNativeBoundedDiagnostics -timeout 2m -v ./internal/nodeops
+        env:
+          TUNNELMANAGER_NATIVE_LAB: '1'
