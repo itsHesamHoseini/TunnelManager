@@ -13,6 +13,7 @@ import (
 )
 
 type RecoveryPolicy struct {
+	Revision         int64      `json:"revision"`
 	ID               string     `json:"id"`
 	Enabled          bool       `json:"enabled"`
 	RestartFailed    bool       `json:"restart_failed"`
@@ -37,17 +38,26 @@ func (r *Runtime) recoveryPolicy(ctx context.Context, b []byte) (any, error) {
 	if _, e := r.load(q.ID); e != nil {
 		return nil, e
 	}
+	q.Day = ""
+	q.Count = 0
+	q.Last = nil
+	q.Observed = nil
+	q.Reason = ""
 	if q.CPU < 0 || q.CPU > 6400 || q.SustainedSeconds < 60 || q.SustainedSeconds > 3600 || q.CooldownSeconds < 120 || q.CooldownSeconds > 86400 || q.DailyLimit < 1 || q.DailyLimit > 10 || (q.CPU == 0 && q.RAM == 0 && !q.RestartFailed) {
 		return nil, errors.New("invalid_recovery_thresholds")
 	}
 	if old, e := os.ReadFile(r.file("recovery", q.ID+".json")); e == nil {
 		var p RecoveryPolicy
 		if json.Unmarshal(old, &p) == nil {
+			if q.Revision != p.Revision {
+				return nil, errors.New("recovery_policy_changed_refresh_before_saving")
+			}
 			q.Last = p.Last
 			q.Day = p.Day
 			q.Count = p.Count
 		}
 	}
+	q.Revision++
 	q.Since = nil
 	if e := writeJSON(r.file("recovery", q.ID+".json"), q); e != nil {
 		return nil, e
@@ -104,25 +114,11 @@ func (r *Runtime) Observe(ctx context.Context, data protocol.Telemetry) {
 			continue
 		}
 		now := time.Now()
-		if p.Observed == nil || now.Sub(*p.Observed) > 75*time.Second {
-			p.Since = nil
-		}
-		p.Observed = &now
 		high := failed
 		if process != nil {
 			high = high || (p.CPU > 0 && process.CPU != nil && *process.CPU >= p.CPU) || (p.RAM > 0 && process.RAM >= p.RAM)
 		}
-		if !high {
-			p.Since = nil
-		} else if p.Since == nil {
-			p.Since = &now
-		}
-		day := now.UTC().Format("2006-01-02")
-		if p.Day != day {
-			p.Day = day
-			p.Count = 0
-		}
-		if p.Since != nil && now.Sub(*p.Since) >= time.Duration(p.SustainedSeconds)*time.Second && (p.Last == nil || now.Sub(*p.Last) >= time.Duration(p.CooldownSeconds)*time.Second) && p.Count < p.DailyLimit {
+		if p.Ready(now, high) {
 			if _, e = registryRawCheck(r, p.ID); e == nil {
 				if _, e = run(ctx, "systemctl", "restart", "--", v.Unit); e == nil {
 					p.Count++
@@ -157,4 +153,23 @@ func (r *Runtime) RecoveryEvents() []map[string]any {
 		}
 	}
 	return out
+}
+
+// Ready advances only actual observation intervals; missing samples reset duration.
+func (p *RecoveryPolicy) Ready(now time.Time, high bool) bool {
+	if p.Observed == nil || now.Sub(*p.Observed) > 75*time.Second || now.Before(*p.Observed) {
+		p.Since = nil
+	}
+	p.Observed = &now
+	if !high {
+		p.Since = nil
+	} else if p.Since == nil {
+		p.Since = &now
+	}
+	day := now.UTC().Format("2006-01-02")
+	if p.Day != day {
+		p.Day = day
+		p.Count = 0
+	}
+	return p.Since != nil && now.Sub(*p.Since) >= time.Duration(p.SustainedSeconds)*time.Second && (p.Last == nil || now.Sub(*p.Last) >= time.Duration(p.CooldownSeconds)*time.Second) && p.Count < p.DailyLimit
 }

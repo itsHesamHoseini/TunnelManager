@@ -83,6 +83,7 @@ func (s *Server) telegramRequest(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) TelegramLoop(ctx context.Context) {
 	offset := int64(0)
+	s.DB.QueryRow(ctx, "SELECT offset_value FROM telegram_cursor WHERE id=1").Scan(&offset)
 	tick := time.NewTicker(3 * time.Second)
 	defer tick.Stop()
 	for {
@@ -92,16 +93,26 @@ func (s *Server) TelegramLoop(ctx context.Context) {
 		case <-tick.C:
 		}
 		st := s.settingsCopy()
-		if !st.TelegramEnabled {
+		if !st.TelegramEnabled && !st.TelegramAlerts && !st.TelegramOperations {
 			continue
 		}
 		s.notifySecurity(ctx)
-		b, e := s.bot(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": []string{"callback_query"}, "limit": 20})
+		s.notifyAlerts(ctx)
+		b, e := s.bot(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 0, "allowed_updates": []string{"callback_query", "message"}, "limit": 20})
 		if e != nil {
 			continue
 		}
 		var updates []struct {
-			ID       int64 `json:"update_id"`
+			ID      int64 `json:"update_id"`
+			Message struct {
+				Text string `json:"text"`
+				From struct {
+					ID int64 `json:"id"`
+				} `json:"from"`
+				Chat struct {
+					ID int64 `json:"id"`
+				} `json:"chat"`
+			} `json:"message"`
 			Callback struct {
 				ID   string `json:"id"`
 				Data string `json:"data"`
@@ -122,6 +133,9 @@ func (s *Server) TelegramLoop(ctx context.Context) {
 			if u.ID >= offset {
 				offset = u.ID + 1
 			}
+			if u.Message.Text != "" && fmt.Sprint(u.Message.Chat.ID) == st.ChatID && fmt.Sprint(u.Message.From.ID) == st.ChatID {
+				s.telegramCommand(ctx, u.ID, u.Message.Text)
+			}
 			q := u.Callback
 			if fmt.Sprint(q.From.ID) != st.ChatID || fmt.Sprint(q.Message.Chat.ID) != st.ChatID {
 				continue
@@ -131,7 +145,11 @@ func (s *Server) TelegramLoop(ctx context.Context) {
 				continue
 			}
 			result := "Expired or already used"
-			if bits[0] == "ok" {
+			if bits[0] == "opok" || bits[0] == "opno" {
+				if st.TelegramOperations && s.telegramDecision(ctx, bits[1], bits[0] == "opok") {
+					result = "درخواست ثبت شد؛ نتیجه در همین گفتگو ارسال می‌شود."
+				}
+			} else if bits[0] == "ok" {
 				tag, e := s.DB.Exec(ctx, "UPDATE challenges SET approved=true WHERE hash=$1 AND kind='mfa' AND expires>now() AND NOT approved", secure.Hash(bits[1]))
 				if e == nil && tag.RowsAffected() == 1 {
 					result = "Approved. Return to the panel."
@@ -143,6 +161,7 @@ func (s *Server) TelegramLoop(ctx context.Context) {
 			}
 			s.bot(ctx, "answerCallbackQuery", map[string]string{"callback_query_id": q.ID, "text": result})
 		}
+		s.DB.Exec(ctx, "INSERT INTO telegram_cursor(id,offset_value)VALUES(1,$1)ON CONFLICT(id)DO UPDATE SET offset_value=GREATEST(telegram_cursor.offset_value,EXCLUDED.offset_value)", offset)
 	}
 }
 

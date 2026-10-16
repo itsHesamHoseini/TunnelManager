@@ -81,6 +81,13 @@ func NormalizeRaw(s *Spec) error {
 			if old, ok := oldRoutes[s.Routes[i].ID]; ok {
 				s.Routes[i].Name = old.Name
 			}
+			old := oldRoutes[s.Routes[i].ID]
+			st := keep(text(table(table(server, "services"), s.Routes[i].ID), "token"), old.Token)
+			ct := keep(text(c, "token"), old.Token)
+			if st != ct {
+				return errors.New("route_authentication_tokens_disagree")
+			}
+			s.Routes[i].Token = st
 		}
 		st, ct := table(server, "transport"), table(client, "transport")
 		if s.Transport == "noise" {
@@ -101,7 +108,7 @@ func NormalizeRaw(s *Spec) error {
 					return errors.New("invalid service table")
 				}
 				for k := range m {
-					if k != "type" && k != "bind_addr" && k != "local_addr" && k != "nodelay" && k != "retry_interval" {
+					if k != "type" && k != "token" && k != "bind_addr" && k != "local_addr" && k != "nodelay" && k != "retry_interval" {
 						return errors.New("per-service advanced option requires a supported form field")
 					}
 				}

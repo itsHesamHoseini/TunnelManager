@@ -41,14 +41,17 @@ type Config struct {
 	Profile                      string
 }
 type Settings struct {
-	Language        string   `json:"language"`
-	Theme           string   `json:"theme"`
-	AccessOnly      []string `json:"access_only"`
-	Trusted         []string `json:"trusted"`
-	Profile         string   `json:"profile"`
-	TelegramToken   string   `json:"telegram_token,omitempty"`
-	ChatID          string   `json:"chat_id,omitempty"`
-	TelegramEnabled bool     `json:"telegram_enabled"`
+	RetentionDays      int      `json:"retention_days"`
+	Language           string   `json:"language"`
+	Theme              string   `json:"theme"`
+	AccessOnly         []string `json:"access_only"`
+	Trusted            []string `json:"trusted"`
+	Profile            string   `json:"profile"`
+	TelegramToken      string   `json:"telegram_token,omitempty"`
+	ChatID             string   `json:"chat_id,omitempty"`
+	TelegramEnabled    bool     `json:"telegram_enabled"`
+	TelegramAlerts     bool     `json:"telegram_alerts"`
+	TelegramOperations bool     `json:"telegram_operations"`
 }
 type Server struct {
 	Config        Config
@@ -81,7 +84,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		p.Close()
 		return nil, errors.New("master key must be 32 bytes")
 	}
-	defaults := Settings{Language: "en", Profile: "standard"}
+	defaults := Settings{Language: "en", Profile: "standard", RetentionDays: 30}
 	if cfg.Language == "fa" {
 		defaults.Language = "fa"
 	}
@@ -602,7 +605,7 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 	write(w, map[string]bool{"ok": true})
 }
 func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.DB.Query(r.Context(), "SELECT at,action,target,result FROM audit ORDER BY id DESC LIMIT 100")
+	rows, e := s.DB.Query(r.Context(), "SELECT a.at,a.action,COALESCE(n.name,t.name,o.name,a.target),a.result FROM audit a LEFT JOIN nodes n ON n.id=a.target LEFT JOIN tunnels t ON t.id=a.target LEFT JOIN operations o ON o.id=a.target ORDER BY a.id DESC LIMIT 100")
 	if e != nil {
 		return
 	}
@@ -639,6 +642,13 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	if q.Profile != "strict" {
 		q.Profile = "standard"
 	}
+	if q.RetentionDays == 0 {
+		q.RetentionDays = 30
+	}
+	if q.RetentionDays != 7 && q.RetentionDays != 30 && q.RetentionDays != 90 {
+		fail(w, 400, "invalid_retention", "Choose 7, 30 or 90 days.", "نگهداری ۷، ۳۰ یا ۹۰ روز را انتخاب کنید.")
+		return
+	}
 	for _, list := range [][]string{q.AccessOnly, q.Trusted} {
 		if len(list) > 50 {
 			fail(w, 400, "invalid_allowlist", "At most 50 addresses.", "حداکثر ۵۰ نشانی مجاز است.")
@@ -659,7 +669,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	if q.TelegramToken == "" {
 		q.TelegramToken = old.TelegramToken
 	}
-	if q.TelegramEnabled && (q.TelegramToken == "" || q.ChatID == "") {
+	if (q.TelegramEnabled || q.TelegramAlerts || q.TelegramOperations) && (q.TelegramToken == "" || q.ChatID == "") {
 		fail(w, 400, "telegram_missing", "Enter bot token and chat ID.", "توکن ربات و شناسهٔ گفتگو را وارد کنید.")
 		return
 	}

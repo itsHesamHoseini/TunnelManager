@@ -233,16 +233,61 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 		s.step(ctx, id, stage, p.Node, status, code)
 		return v, e
 	}
-	fail := func(e error) {
-		recovery := []map[string]any{}
-		for _, p := range parts {
-			_, re := runPart(p, "rollback", "change.rollback", map[string]any{"ID": changeID(id, p.Instance), "Compensate": true})
-			recovery = append(recovery, map[string]any{"node": p.Node, "restored": re == nil})
+	fail := func(cause error) {
+		if q.FailureCode == "" {
+			q.FailureCode = cause.Error()
 		}
-		s.DB.Exec(ctx, "DELETE FROM port_reservations WHERE plan_id=$1", id)
-		s.phase(ctx, id, "failed", map[string]any{"recovery": recovery, "local_rollback": "armed on unconfirmed nodes; unreachable confirmed peers require reconciliation"}, e)
+		q.RecoveryAttempt++
+		recovery := []map[string]any{}
+		pending, review := false, false
+		for _, p := range parts {
+			stage := fmt.Sprintf("rollback_%d_%s", q.RecoveryAttempt, engine.Digest([]byte(p.Instance))[:12])
+			s.step(ctx, id, "rollback", p.Node, "running", "")
+			_, re := s.command(ctx, id, p.Node, stage, "change.rollback", map[string]any{"ID": changeID(id, p.Instance), "Compensate": true})
+			restored := re == nil
+			code := ""
+			if re != nil {
+				code = re.Error()
+				if code == "change_journal_missing" {
+					var activated bool
+					s.DB.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM commands WHERE operation_id=$1 AND node_id=$2 AND stage=$3)", id, p.Node, "activate_"+engine.Digest([]byte(p.Instance))[:12]).Scan(&activated)
+					restored = !activated
+					if activated {
+						review = true
+					}
+				} else if code == "newer_change_blocks_compensation" || code == "manual_config_drift" || code == "manual_unit_drift" {
+					review = true
+				} else {
+					pending = true
+				}
+			}
+			recovery = append(recovery, map[string]any{"node": p.Node, "restored": restored, "code": code})
+			s.step(ctx, id, "rollback", p.Node, map[bool]string{true: "succeeded", false: "failed"}[restored], code)
+		}
+		next := "failed"
+		if pending {
+			next = "recovery_pending"
+		}
+		if review {
+			next = "needs_review"
+		}
+		if q.RecoveryAttempt >= 1000 {
+			next = "needs_review"
+		}
+		cipher, e := s.sealValue("operation:"+id, q)
+		if e == nil {
+			s.DB.Exec(ctx, "UPDATE operations SET cipher=$1 WHERE id=$2", cipher, id)
+		}
+		if !pending || review {
+			s.DB.Exec(ctx, "DELETE FROM port_reservations WHERE plan_id=$1", id)
+		}
+		s.phase(ctx, id, next, map[string]any{"recovery": recovery, "local_rollback": "unconfirmed nodes keep their independent local timer", "next_action": map[bool]string{true: "review newer intent/drift before explicit reconciliation", false: "automatic rollback retries after node reconnection"}[review]}, errors.New(q.FailureCode))
 	}
+
 	switch phase {
+	case "recovery_pending":
+		fail(errors.New(q.FailureCode))
+		return
 	case "queued", "running":
 		s.phase(ctx, id, "running", nil, nil)
 		previews := map[string]any{}
@@ -267,6 +312,9 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 		}
 		s.phase(ctx, id, "ready", map[string]any{"previews": previews, "affected_tunnels": publicAffected(q), "affected_routes": engine.Public(q.Spec).Routes, "reverse_connection": map[string]string{"from": q.Spec.Dialer, "to": q.Spec.Listener}, "notice": "activation restarts the selected shared units; application health is checked separately"}, nil)
 	case "applying":
+		for _, g := range q.Updates {
+			s.DB.Exec(ctx, `UPDATE tunnels SET health='{"transport":{"status":"unknown","code":"change_in_progress"},"application":{"status":"unknown"}}' WHERE id=$1`, g.ID)
+		}
 		if q.ExpectedRevision > 0 {
 			_, revision, _, e := s.readTunnel(ctx, q.Tunnel)
 			if e != nil || revision != q.ExpectedRevision {

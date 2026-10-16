@@ -18,7 +18,9 @@ type TunnelUpdate struct {
 	Record   TunnelRecord
 }
 
-func changeID(op, instance string) string { return op + "_" + engine.Digest([]byte(instance))[:12] }
+func changeID(op, instance string) string {
+	return "chg_" + op + "_" + engine.Digest([]byte(instance))[:12]
+}
 func nodeSpec(p ChangePart) engine.Spec {
 	spec := p.Spec
 	spec.Application = nil

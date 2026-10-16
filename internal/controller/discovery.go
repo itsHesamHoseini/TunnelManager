@@ -51,9 +51,26 @@ func (s *Server) discoveryList(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, e)
 		return
 	}
+	linked := map[string]bool{}
+	rows, e := s.DB.Query(r.Context(), "SELECT id,cipher FROM tunnels")
+	if e == nil {
+		for rows.Next() {
+			var id string
+			var cipher []byte
+			rows.Scan(&id, &cipher)
+			var rec TunnelRecord
+			if s.openValue("tunnel:"+id, cipher, &rec) == nil {
+				for node, instance := range rec.Instances {
+					linked[node+":"+instance] = true
+				}
+			}
+		}
+		rows.Close()
+	}
 	for i := range nodes {
 		for j := range nodes[i].Instances {
 			nodes[i].Instances[j].AuthMatch = ""
+			nodes[i].Instances[j].Linked = linked[nodes[i].ID+":"+nodes[i].Instances[j].ID]
 		}
 	}
 	write(w, nodes)
@@ -107,6 +124,25 @@ func pairedSpec(listener, dialer string, a, b nodeops.Discovered) (engine.Spec, 
 	return spec, nil
 }
 func (s *Server) storeImport(ctx context.Context, name string, spec engine.Spec, a, b nodeops.Discovered, manual bool) (string, error) {
+	rows, e := s.DB.Query(ctx, "SELECT id,cipher FROM tunnels")
+	if e != nil {
+		return "", e
+	}
+	existing := ""
+	for rows.Next() {
+		var id string
+		var cipher []byte
+		rows.Scan(&id, &cipher)
+		var rec TunnelRecord
+		if s.openValue("tunnel:"+id, cipher, &rec) == nil && rec.Instances[spec.Listener] == a.ID && rec.Instances[spec.Dialer] == b.ID {
+			existing = id
+			break
+		}
+	}
+	rows.Close()
+	if existing != "" {
+		return existing, nil
+	}
 	// Stable pair identity prevents a periodic discovery from duplicating imported paths.
 	id := "import_" + engine.Digest([]byte(spec.Listener + ":" + a.ID + ":" + spec.Dialer + ":" + b.ID))[:24]
 	record := TunnelRecord{Spec: spec, Instances: map[string]string{spec.Listener: a.ID, spec.Dialer: b.ID}, Hashes: map[string]string{spec.Listener: a.Hash, spec.Dialer: b.Hash}}
@@ -128,7 +164,7 @@ func (s *Server) reconcileDiscovery(ctx context.Context) {
 			continue
 		}
 		for _, client := range clientNode.Instances {
-			if client.Role != "client" || client.AuthMatch == "" {
+			if client.Role != "client" || client.AuthMatch == "" || client.Managed {
 				continue
 			}
 			remote, e := engine.ParseEndpoint(client.Parsed.Remote)
@@ -154,7 +190,7 @@ func (s *Server) reconcileDiscovery(ctx context.Context) {
 					continue
 				}
 				for _, server := range serverNode.Instances {
-					if server.Role != "server" || server.AuthMatch != client.AuthMatch {
+					if server.Role != "server" || server.AuthMatch != client.AuthMatch || server.Managed {
 						continue
 					}
 					if _, e := pairedSpec(serverNode.ID, clientNode.ID, server, client); e == nil {

@@ -51,6 +51,7 @@ type Instance struct {
 	UnitPath       string   `json:"unit_path,omitempty"`
 	UnitHash       string   `json:"unit_hash,omitempty"`
 	DefinitionHash string   `json:"definition_hash,omitempty"`
+	Epoch          string   `json:"epoch,omitempty"`
 }
 type Receipt struct {
 	Hash    string           `json:"hash"`

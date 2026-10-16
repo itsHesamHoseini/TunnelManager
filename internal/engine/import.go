@@ -28,7 +28,9 @@ func ImportSecrets(s *Spec, serverRaw, clientRaw string) error {
 			return errors.New("peer_tokens_disagree")
 		}
 		if s.Token == "" {
-			s.Token = "unused-global-token"
+			if e := GenerateSecrets(s); e != nil {
+				return e
+			}
 		}
 		for i := range s.Routes {
 			sid := s.Routes[i].ID

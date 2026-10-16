@@ -13,6 +13,8 @@ ALTER TABLE nodes ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 1;
 INSERT INTO schema_version VALUES(2) ON CONFLICT DO NOTHING;
 CREATE TABLE IF NOT EXISTS measurements(id bigserial PRIMARY KEY,node_id text REFERENCES nodes(id) ON DELETE CASCADE,at timestamptz NOT NULL DEFAULT now(),data jsonb NOT NULL);
 CREATE INDEX IF NOT EXISTS measurements_node_at ON measurements(node_id,at DESC);
+CREATE INDEX IF NOT EXISTS measurements_at ON measurements(at);
+CREATE TABLE IF NOT EXISTS measurement_rollups(node_id text REFERENCES nodes(id)ON DELETE CASCADE,at timestamptz,data jsonb NOT NULL,PRIMARY KEY(node_id,at));
 CREATE TABLE IF NOT EXISTS node_usage(node_id text REFERENCES nodes(id) ON DELETE CASCADE,month text,rx bigint NOT NULL DEFAULT 0,tx bigint NOT NULL DEFAULT 0,started timestamptz NOT NULL,ended timestamptz NOT NULL,interface text NOT NULL,PRIMARY KEY(node_id,month));
 ALTER TABLE nodes ADD COLUMN IF NOT EXISTS protocol integer NOT NULL DEFAULT 1;
 ALTER TABLE nodes ADD COLUMN IF NOT EXISTS inventory jsonb NOT NULL DEFAULT '{}';
@@ -36,3 +38,6 @@ CREATE INDEX IF NOT EXISTS checks_target ON checks(target,at DESC);
 CREATE TABLE IF NOT EXISTS recovery_rules(node_id text REFERENCES nodes(id) ON DELETE CASCADE,instance_id text,policy jsonb NOT NULL,PRIMARY KEY(node_id,instance_id));
 CREATE TABLE IF NOT EXISTS telegram_actions(hash text PRIMARY KEY,operation_id text REFERENCES operations(id),expires timestamptz NOT NULL,consumed boolean NOT NULL DEFAULT false);
 INSERT INTO schema_version VALUES(4) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS telegram_cursor(id integer PRIMARY KEY CHECK(id=1),offset_value bigint NOT NULL);
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS notification_attempt timestamptz;

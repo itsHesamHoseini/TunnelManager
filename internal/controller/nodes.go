@@ -184,6 +184,9 @@ func (s *Server) nodeDelete(w http.ResponseWriter, r *http.Request) {
 	write(w, map[string]bool{"ok": true})
 }
 func (s *Server) nodeHistory(w http.ResponseWriter, r *http.Request) {
+	if s.aggregateHistory(w, r) {
+		return
+	}
 	rows, e := s.DB.Query(r.Context(), "SELECT at,data FROM measurements WHERE node_id=$1 ORDER BY at DESC LIMIT 240", r.PathValue("id"))
 	if e != nil {
 		return
@@ -362,6 +365,7 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (s *Server) Maintenance(ctx context.Context) {
+	s.retain(ctx)
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {
@@ -369,7 +373,7 @@ func (s *Server) Maintenance(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			s.DB.Exec(ctx, "DELETE FROM measurements WHERE at<now()-interval '7 days'")
+			s.retain(ctx)
 			s.DB.Exec(ctx, "DELETE FROM sessions WHERE expires<now()")
 			s.DB.Exec(ctx, "DELETE FROM auth_failures WHERE updated<now()-interval '1 day'")
 			s.DB.Exec(ctx, "DELETE FROM challenges WHERE expires<now()")

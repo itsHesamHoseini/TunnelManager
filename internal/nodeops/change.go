@@ -74,7 +74,15 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 		}
 	}
 	issues := []map[string]any{}
+	published, dockerError := dockerPorts(ctx)
+	if dockerError != nil {
+		issues = append(issues, map[string]any{"code": dockerError.Error()})
+	}
 	for _, bind := range engine.Bindings(q.Spec, q.Role) {
+		if dockerConflict(published, bind) {
+			issues = append(issues, map[string]any{"code": "docker_published_port_conflict", "address": net.JoinHostPort(bind.Host, fmt.Sprint(bind.Port)), "protocol": bind.Protocol})
+			continue
+		}
 		address := net.JoinHostPort(bind.Host, fmt.Sprint(bind.Port))
 		if bind.Host == "*" {
 			address = net.JoinHostPort("", fmt.Sprint(bind.Port))
@@ -124,6 +132,9 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 	}
 	if q.Role == "client" {
 		for _, route := range q.Spec.Routes {
+			if route.Protocol == "udp" {
+				continue
+			}
 			d := net.Dialer{Timeout: 2 * time.Second}
 			conn, e := d.DialContext(ctx, "tcp", route.Backend.String())
 			if e != nil {
@@ -173,6 +184,7 @@ func (r *Runtime) prepare(ctx context.Context, b []byte) (any, error) {
 	}
 	v := Instance{ID: q.Instance, Name: q.Name, Engine: q.Spec.Engine, Version: q.Spec.Version, Role: q.Role, Unit: "tunnelmanager-instance-" + q.Instance + ".service", Path: filepath.Join(r.ConfigDir, "instances", q.Instance+".toml"), Binary: filepath.Join("/opt/tunnelmanager/engines", q.Spec.Engine, q.Spec.Version, q.Spec.Engine), Hash: engine.Digest([]byte(raw)), Managed: true, Routes: engine.SortedRouteIDs(q.Spec)}
 	j := Journal{Change: q, Candidate: v, NewConfig: raw, Phase: "prepared"}
+	j.Candidate.Epoch = q.ID
 	if old, e := r.load(q.Instance); e == nil {
 		if _, _, e = registryRaw(r, q.Instance); e != nil {
 			return nil, e
@@ -190,6 +202,7 @@ func (r *Runtime) prepare(ctx context.Context, b []byte) (any, error) {
 		v.Stopped = old.Stopped
 		v.Disabled = old.Disabled
 		j.Candidate = v
+		j.Candidate.Epoch = q.ID
 		j.WasActive = isState(ctx, "is-active", old.Unit, "active")
 		j.WasEnabled = isState(ctx, "is-enabled", old.Unit, "enabled")
 	}
@@ -394,18 +407,12 @@ func (r *Runtime) revert(ctx context.Context, id string, compensate bool) error 
 		return nil
 	}
 	if j.Phase == "confirmed" {
-		if time.Since(j.Change.Deadline) > 10*time.Minute {
-			return errors.New("compensation_window_expired")
-		}
 		current, _, checkError := registryRaw(r, j.Candidate.ID)
 		if checkError != nil {
 			return checkError
 		}
-		if current.Hash != j.Candidate.Hash {
+		if current.Hash != j.Candidate.Hash || current.Epoch != j.Candidate.Epoch {
 			return errors.New("newer_change_blocks_compensation")
-		}
-		if e != nil {
-			return e
 		}
 	}
 	if j.Phase == "prepared" {
@@ -519,6 +526,7 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 	if e != nil {
 		return nil, e
 	}
+	v.Epoch = "intent_" + engine.Digest(append(b, []byte(time.Now().UTC().Format(time.RFC3339Nano))...))[:24]
 	if e = r.save(v); e != nil {
 		return nil, e
 	}

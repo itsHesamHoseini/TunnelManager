@@ -76,6 +76,20 @@ func (s *Server) command(ctx context.Context, op, node, stage, kind string, payl
 	if protocolVersion < 2 {
 		return protocol.Result{}, errors.New("upgrade_node_agent_before_management")
 	}
+	if !s.isConnected(node) {
+		var cached []byte
+		var cachedID string
+		if s.DB.QueryRow(ctx, "SELECT id,result_cipher FROM commands WHERE operation_id=$1 AND node_id=$2 AND stage=$3 AND state='completed'", op, node, stage).Scan(&cachedID, &cached) == nil {
+			var result protocol.Result
+			if s.openValue("result:"+cachedID, cached, &result) == nil {
+				if result.OK {
+					return result, nil
+				}
+				return result, errors.New(result.Code)
+			}
+		}
+		return protocol.Result{}, errors.New("node_offline")
+	}
 	_, e = s.DB.Exec(ctx, "INSERT INTO commands(id,operation_id,node_id,stage,kind,cipher,expires)VALUES($1,$2,$3,$4,$5,$6,now()+interval '3 minutes') ON CONFLICT(operation_id,node_id,stage) DO NOTHING", id, op, node, stage, kind, cipher)
 	if e != nil {
 		return protocol.Result{}, e
@@ -106,6 +120,9 @@ func (s *Server) command(ctx context.Context, op, node, stage, kind string, payl
 		if time.Now().After(expires) {
 			return protocol.Result{}, errors.New("node_command_expired")
 		}
+		if !s.isConnected(node) {
+			return protocol.Result{}, errors.New("node_offline")
+		}
 		select {
 		case <-ctx.Done():
 			return protocol.Result{}, ctx.Err()
@@ -115,6 +132,10 @@ func (s *Server) command(ctx context.Context, op, node, stage, kind string, payl
 }
 
 type JobPayload struct {
+	RecoveryAttempt  int               `json:"recovery_attempt,omitempty"`
+	FailureCode      string            `json:"failure_code,omitempty"`
+	AwaitTelegram    bool              `json:"await_telegram,omitempty"`
+	TelegramReply    bool              `json:"telegram_reply,omitempty"`
 	Parts            []ChangePart      `json:"parts,omitempty"`
 	Updates          []TunnelUpdate    `json:"updates,omitempty"`
 	Certificate      string            `json:"certificate,omitempty"`
@@ -148,7 +169,11 @@ func (s *Server) newJob(ctx context.Context, key, kind, target, name string, pay
 		raw, _ := json.Marshal(payload)
 		payload.RequestHash = secure.Hash(string(s.Config.Key) + kind + target + name + string(raw))
 	}
-	e = s.DB.QueryRow(ctx, "INSERT INTO operations(id,request_key,kind,target,name,cipher,request_hash)VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(request_key) DO UPDATE SET request_key=EXCLUDED.request_key WHERE operations.request_hash=EXCLUDED.request_hash RETURNING id", id, key, kind, target, name, cipher, payload.RequestHash).Scan(&existing)
+	initial := "queued"
+	if payload.AwaitTelegram {
+		initial = "awaiting_telegram"
+	}
+	e = s.DB.QueryRow(ctx, "INSERT INTO operations(id,request_key,kind,target,name,cipher,request_hash,phase)VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(request_key) DO UPDATE SET request_key=EXCLUDED.request_key WHERE operations.request_hash=EXCLUDED.request_hash RETURNING id", id, key, kind, target, name, cipher, payload.RequestHash, initial).Scan(&existing)
 	if e != nil {
 		return "", errors.New("request_key_reused_with_different_input")
 	}
@@ -159,7 +184,7 @@ func (s *Server) newJob(ctx context.Context, key, kind, target, name string, pay
 }
 func (s *Server) step(ctx context.Context, id, stage, node, status, code string) {
 	event, _ := json.Marshal([]map[string]any{{"stage": stage, "node": node, "status": status, "code": code, "at": time.Now().UTC()}})
-	s.DB.Exec(ctx, "UPDATE operations SET steps=steps||$1::jsonb,updated=now() WHERE id=$2", event, id)
+	s.DB.Exec(ctx, "UPDATE operations SET steps=(SELECT jsonb_agg(value ORDER BY ord) FROM(SELECT value,ord FROM jsonb_array_elements(steps||$1::jsonb) WITH ORDINALITY a(value,ord) ORDER BY ord DESC LIMIT 200)a),updated=now() WHERE id=$2", event, id)
 }
 func (s *Server) phase(ctx context.Context, id, phase string, result any, err error) {
 	code := ""
@@ -191,9 +216,10 @@ func (s *Server) Operations(ctx context.Context) {
 		case id := <-done:
 			delete(running, id)
 		case <-ticker.C:
+			s.DB.Exec(ctx, "UPDATE operations SET phase='expired',error='telegram_confirmation_expired',updated=now() WHERE phase='awaiting_telegram' AND NOT EXISTS(SELECT 1 FROM telegram_actions t WHERE t.operation_id=operations.id AND t.expires>now() AND NOT t.consumed) AND created<now()-interval '2 minutes'")
 			s.DB.Exec(ctx, "UPDATE operations SET phase='reverting',updated=now() WHERE kind='plan' AND phase='awaiting_confirmation' AND deadline<now()")
 			s.DB.Exec(ctx, "UPDATE operations SET phase='expired',updated=now() WHERE phase='ready' AND updated<now()-interval '10 minutes'")
-			rows, e := s.DB.Query(ctx, "SELECT id FROM operations WHERE phase IN ('queued','applying','confirming','reverting','running') ORDER BY created LIMIT 30")
+			rows, e := s.DB.Query(ctx, "SELECT id FROM operations WHERE phase IN ('queued','applying','confirming','reverting','running') OR(phase='recovery_pending' AND updated<now()-interval '30 seconds') ORDER BY created LIMIT 30")
 			if e != nil {
 				continue
 			}
@@ -242,6 +268,7 @@ func (s *Server) processJob(parent context.Context, id string) {
 		s.phase(ctx, id, "failed", nil, errors.New("operation_decryption_failed"))
 		return
 	}
+	defer s.notifyOperation(context.WithoutCancel(ctx), id, q)
 	switch kind {
 	case "node":
 		s.phase(ctx, id, "running", nil, nil)

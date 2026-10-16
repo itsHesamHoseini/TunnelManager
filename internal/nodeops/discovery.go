@@ -20,6 +20,8 @@ import (
 )
 
 type Discovered struct {
+	Linked   bool            `json:"linked"`
+	Recovery *RecoveryPolicy `json:"recovery,omitempty"`
 	Instance
 	Parsed        engine.Parsed `json:"parsed"`
 	Active        string        `json:"active"`
@@ -143,10 +145,17 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 		}
 		if own, ok := owned[unit]; ok && own.Path == path && own.Binary == exe {
 			d.ID = own.ID
+			if own.Name != "" {
+				d.Name = own.Name
+			}
 			d.Managed = true
 			d.Adopted = own.Adopted
 			d.Stopped = own.Stopped
 			d.Disabled = own.Disabled
+			var policy RecoveryPolicy
+			if b, e := os.ReadFile(r.file("recovery", own.ID+".json")); e == nil && json.Unmarshal(b, &policy) == nil {
+				d.Recovery = &policy
+			}
 		}
 		if d.Version == "" && d.Reason == "" {
 			d.Reason = "install_verified_version_before_adoption"
