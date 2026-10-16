@@ -19,6 +19,24 @@ func TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade(t *testing
 	if e != nil {
 		t.Fatal(e)
 	}
+	parsed, _ := Parse(client)
+	if _, ok := table(parsed, "client")["retry_interval"].(int64); !ok {
+		t.Fatal("JSON roundtrip emitted a TOML float for the engine's integer interval")
+	}
+	parsed, _ = Parse(server)
+	if _, ok := table(parsed, "server")["heartbeat_interval"].(int64); !ok {
+		t.Fatal("integer heartbeat rendered as a TOML float")
+	}
+	backhaul := fixture("backhaul")
+	backhaul.Advanced = map[string]any{"connection_pool": float64(12)}
+	raw, e := Render(backhaul, "client")
+	if e != nil {
+		t.Fatal(e)
+	}
+	parsed, _ = Parse(raw)
+	if _, ok := table(parsed, "client")["connection_pool"].(int64); !ok {
+		t.Fatal("Backhaul integer option rendered as a TOML float")
+	}
 	s.RawServer = Redact(server)
 	s.RawClient = Redact(client)
 	if e = NormalizeRaw(&s); e != nil {

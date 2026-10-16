@@ -171,3 +171,19 @@ func mergeOptions(base, options map[string]any) {
 		}
 	}
 }
+
+// JSON decodes validated integer engine options as float64. TOML distinguishes
+// integers from floats, and the native engines reject e.g. retry_interval=2.0.
+// Run only on the newly rendered map, never on the caller's draft/options.
+func tomlIntegerOptions(m map[string]any) {
+	for key, value := range m {
+		switch v := value.(type) {
+		case map[string]any:
+			tomlIntegerOptions(v)
+		case float64:
+			if v >= 0 && v <= 1<<53 && v == float64(int64(v)) {
+				m[key] = int64(v)
+			}
+		}
+	}
+}

@@ -460,6 +460,13 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		record.Spec.Routes[0].User.Port = 24845 + index
 		record.Spec.Application = &engine.Probe{Kind: "http", Endpoint: engine.Endpoint{Host: ips[0], Port: 24845 + index}, Path: "/probe", Expected: "synthetic-native-response"}
 		applyPlan(map[string]any{"RequestKey": fmt.Sprintf("native_shared_edit_%d", index), "Tunnel": id, "Name": []string{"Synthetic shared first", "Synthetic shared second"}[index], "Spec": record.Spec, "ExpectedRevision": revision})
+		for _, unit := range []string{"synthetic-shared-server", "synthetic-shared-first", "synthetic-shared-second"} {
+			container := nodes[1]
+			if unit == "synthetic-shared-server" {
+				container = nodes[0]
+			}
+			run("exec", container, "systemctl", "is-active", unit)
+		}
 	}
 	for _, port := range []string{"24845", "24846"} {
 		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+port+"/probe',timeout=5).read()")

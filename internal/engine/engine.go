@@ -402,6 +402,7 @@ func Render(s Spec, role string) (string, error) {
 		}
 	}
 	mergeOptions(side, opts)
+	tomlIntegerOptions(cfg)
 	b, e := toml.Marshal(cfg)
 	return string(b), e
 }
