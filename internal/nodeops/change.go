@@ -503,6 +503,9 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 	if e := decode(b, &q); e != nil {
 		return nil, e
 	}
+	if !engine.ID(q.ID) || !q.Confirm {
+		return nil, errors.New("impact_confirmation_required")
+	}
 	if e := r.pending(q.ID, ""); e != nil && !(e.Error() == "restore_temporary_logging_before_changing_service" && (q.Action == "stop" || q.Action == "disable")) {
 		return nil, e
 	}
@@ -511,6 +514,16 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 		v, _, e = registryRaw(r, q.ID)
 	}
 	if e != nil {
+		if q.Action == "revoke" {
+			return map[string]any{"management_revoked": true, "unit_preserved": true}, nil
+		}
+		if q.Action == "remove" {
+			var tombstone struct{ Hash string }
+			data, err := os.ReadFile(r.file("removed", q.ID+".json"))
+			if err == nil && json.Unmarshal(data, &tombstone) == nil && tombstone.Hash == q.ExpectedHash {
+				return map[string]any{"removed": true, "already_completed": true}, nil
+			}
+		}
 		return nil, e
 	}
 	expected := q.ExpectedHash == v.Hash
@@ -525,6 +538,16 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 	}
 	if !q.Confirm {
 		return nil, errors.New("impact_confirmation_required")
+	}
+	if q.Action == "stop" || q.Action == "disable" {
+		v.Stopped = true
+		if q.Action == "disable" {
+			v.Disabled = true
+		}
+		v.Epoch = "intent_" + engine.Digest(append(b, []byte(time.Now().UTC().Format(time.RFC3339Nano))...))[:24]
+		if e = r.save(v); e != nil {
+			return nil, e
+		}
 	}
 	switch q.Action {
 	case "stop":
@@ -554,6 +577,9 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 		}
 		_, e = run(ctx, "systemctl", "disable", "--now", "--", v.Unit)
 		if e == nil {
+			if e = writeJSON(r.file("removed", v.ID+".json"), map[string]string{"Hash": v.Hash}); e != nil {
+				return nil, e
+			}
 			os.Remove(filepath.Join("/etc/systemd/system", v.Unit))
 			os.Remove(v.Path)
 			os.Remove(r.file("instances", v.ID+".json"))

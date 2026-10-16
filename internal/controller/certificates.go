@@ -266,6 +266,20 @@ func (s *Server) processCertificate(ctx context.Context, id string, q JobPayload
 			fail(errors.New("invalid_certificate_request"))
 			return
 		}
+		if q.ExpectedRevision > 0 {
+			old, rev, e := s.readCertificate(ctx, q.Certificate)
+			if e != nil || rev != q.ExpectedRevision {
+				fail(errors.New("certificate_revision_changed"))
+				return
+			}
+			req.PKCS12Password = old.PKCS12Password
+			if req.ProviderToken == "" {
+				req.ProviderToken = old.ProviderToken
+			}
+			if req.AccountKey == "" {
+				req.AccountKey = old.AccountKey
+			}
+		}
 		if req.PKCS12Password == "" {
 			req.PKCS12Password = secure.Token(24)
 		}

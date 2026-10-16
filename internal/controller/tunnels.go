@@ -244,13 +244,31 @@ func (s *Server) planTransition(w http.ResponseWriter, r *http.Request) {
 		from, to = "awaiting_confirmation", "confirming"
 	} else if q.Action == "rollback" {
 		from, to = "awaiting_confirmation", "reverting"
+	} else if q.Action == "cancel" {
+		from, to = "ready", "cancelled"
 	} else if q.Action != "apply" {
 		badOperation(w, errors.New("invalid_plan_action"))
 		return
 	}
-	tag, e := s.DB.Exec(r.Context(), "UPDATE operations SET phase=$1,updated=now() WHERE id=$2 AND kind='plan' AND phase=$3", to, r.PathValue("id"), from)
+	tx, e := s.DB.Begin(r.Context())
+	if e != nil {
+		badOperation(w, e)
+		return
+	}
+	defer tx.Rollback(r.Context())
+	tag, e := tx.Exec(r.Context(), "UPDATE operations SET phase=$1,updated=now() WHERE id=$2 AND kind='plan' AND phase=$3", to, r.PathValue("id"), from)
 	if e != nil || tag.RowsAffected() != 1 {
 		badOperation(w, errors.New("operation_state_changed"))
+		return
+	}
+	if q.Action == "cancel" {
+		if _, e = tx.Exec(r.Context(), "DELETE FROM port_reservations WHERE plan_id=$1", r.PathValue("id")); e != nil {
+			badOperation(w, e)
+			return
+		}
+	}
+	if e = tx.Commit(r.Context()); e != nil {
+		badOperation(w, e)
 		return
 	}
 	s.Audit(r.Context(), "change-"+q.Action, r.PathValue("id"), "explicitly-confirmed")

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/coder/websocket"
+	"github.com/itsHesamHoseini/TunnelManager/internal/buildinfo"
 	"github.com/itsHesamHoseini/TunnelManager/internal/limit"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"github.com/jackc/pgx/v5"
@@ -41,17 +42,20 @@ type Config struct {
 	Profile                      string
 }
 type Settings struct {
-	RetentionDays      int      `json:"retention_days"`
-	Language           string   `json:"language"`
-	Theme              string   `json:"theme"`
-	AccessOnly         []string `json:"access_only"`
-	Trusted            []string `json:"trusted"`
-	Profile            string   `json:"profile"`
-	TelegramToken      string   `json:"telegram_token,omitempty"`
-	ChatID             string   `json:"chat_id,omitempty"`
-	TelegramEnabled    bool     `json:"telegram_enabled"`
-	TelegramAlerts     bool     `json:"telegram_alerts"`
-	TelegramOperations bool     `json:"telegram_operations"`
+	AlertOfflineSeconds  int      `json:"alert_offline_seconds"`
+	AlertCertificateDays int      `json:"alert_certificate_days"`
+	AlertRepeatMinutes   int      `json:"alert_repeat_minutes"`
+	RetentionDays        int      `json:"retention_days"`
+	Language             string   `json:"language"`
+	Theme                string   `json:"theme"`
+	AccessOnly           []string `json:"access_only"`
+	Trusted              []string `json:"trusted"`
+	Profile              string   `json:"profile"`
+	TelegramToken        string   `json:"telegram_token,omitempty"`
+	ChatID               string   `json:"chat_id,omitempty"`
+	TelegramEnabled      bool     `json:"telegram_enabled"`
+	TelegramAlerts       bool     `json:"telegram_alerts"`
+	TelegramOperations   bool     `json:"telegram_operations"`
 }
 type Server struct {
 	Config        Config
@@ -221,11 +225,11 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 503, "not_ready", "Database unavailable.", "پایگاه داده در دسترس نیست.")
 			return
 		}
-		write(w, map[string]any{"ok": true, "version": "0.3.0"})
+		write(w, map[string]any{"ok": true, "version": buildinfo.Version, "commit": buildinfo.Commit})
 	})
 	m.HandleFunc("GET /api/context", func(w http.ResponseWriter, r *http.Request) {
 		st := s.settingsCopy()
-		write(w, map[string]any{"name": "TunnelManager", "version": "0.3.0", "language": st.Language})
+		write(w, map[string]any{"name": "TunnelManager", "version": buildinfo.Version, "commit": buildinfo.Commit, "language": st.Language})
 	})
 	m.HandleFunc("POST /api/login", s.login)
 	m.HandleFunc("POST /api/mfa", s.mfa)
@@ -649,6 +653,19 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if q.RetentionDays != 7 && q.RetentionDays != 30 && q.RetentionDays != 90 {
 		fail(w, 400, "invalid_retention", "Choose 7, 30 or 90 days.", "نگهداری ۷، ۳۰ یا ۹۰ روز را انتخاب کنید.")
+		return
+	}
+	if q.AlertOfflineSeconds == 0 {
+		q.AlertOfflineSeconds = 150
+	}
+	if q.AlertCertificateDays == 0 {
+		q.AlertCertificateDays = 14
+	}
+	if q.AlertRepeatMinutes == 0 {
+		q.AlertRepeatMinutes = 60
+	}
+	if q.AlertOfflineSeconds < 90 || q.AlertOfflineSeconds > 3600 || q.AlertCertificateDays < 1 || q.AlertCertificateDays > 60 || q.AlertRepeatMinutes < 5 || q.AlertRepeatMinutes > 1440 {
+		fail(w, 400, "invalid_alert_thresholds", "Review alert durations.", "مدت‌های هشدار را در بازهٔ مشخص‌شده وارد کنید.")
 		return
 	}
 	for _, list := range [][]string{q.AccessOnly, q.Trusted} {

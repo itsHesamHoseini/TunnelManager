@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/itsHesamHoseini/TunnelManager/internal/agent"
+	"github.com/itsHesamHoseini/TunnelManager/internal/buildinfo"
 	"github.com/itsHesamHoseini/TunnelManager/internal/config"
 	"github.com/itsHesamHoseini/TunnelManager/internal/controller"
 	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
@@ -21,7 +22,7 @@ import (
 	"time"
 )
 
-const version = "0.3.0"
+var version = buildinfo.Version
 
 func main() {
 	if e := run(os.Args[1:]); e != nil {
@@ -195,5 +196,5 @@ func run(args []string) error {
 	}
 }
 func help() {
-	fmt.Println("TunnelManager 0.3.0\nCommands: setup, status, doctor, update, uninstall, backup, restore, reset-admin-password, config show, logs, version.\nExample: tunnelmanager setup --mode controller --domain panel.example.com --port 9443\nUse tunnelmanager COMMAND --help for details.")
+	fmt.Println("TunnelManager " + version + "\nCommands: setup, status, doctor, update, uninstall, backup, restore, reset-admin-password, config show, logs, version.\nExample: tunnelmanager setup --mode controller --domain panel.example.com --port 9443\nUse tunnelmanager COMMAND --help for details.")
 }

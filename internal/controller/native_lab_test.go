@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
 	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"math/big"
@@ -221,6 +222,84 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	if executed != 4 {
 		t.Fatal("batch did not execute exactly once on four selected instances")
 	}
+	applyPlan := func(body map[string]any) string {
+		t.Helper()
+		status, reply := request(t, client, srv.URL+"/api/tunnel-plans", "POST", body)
+		if status != 200 {
+			t.Fatalf("native plan rejected: %v", reply["message"])
+		}
+		operation, _ := reply["operation_id"].(string)
+		for _, transition := range []struct{ phase, action string }{{"ready", "apply"}, {"awaiting_confirmation", "confirm"}} {
+			ready := false
+			for attempt := 0; attempt < 100; attempt++ {
+				var phase, code string
+				s.DB.QueryRow(ctx, "SELECT phase,error FROM operations WHERE id=$1", operation).Scan(&phase, &code)
+				if phase == transition.phase {
+					ready = true
+					break
+				}
+				if phase == "failed" || phase == "needs_review" {
+					t.Fatal("native plan: " + code)
+				}
+				time.Sleep(time.Second)
+			}
+			if !ready {
+				t.Fatal("native plan phase timeout: " + transition.phase)
+			}
+			status, _ = request(t, client, srv.URL+"/api/operations/"+operation+"/transition", "POST", map[string]any{"Action": transition.action, "Confirm": true})
+			if status != 200 {
+				t.Fatal("native transition rejected")
+			}
+		}
+		wait(operation)
+		target, _ := reply["tunnel_id"].(string)
+		return target
+	}
+	var originalID string
+	s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native rathole noise'").Scan(&originalID)
+	original, rev, _, e := s.readTunnel(ctx, originalID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, version := range []int64{1, 2} {
+		applyPlan(map[string]any{"RequestKey": fmt.Sprintf("native_version_%d", version), "Tunnel": originalID, "Name": "Synthetic native rathole noise", "Spec": original.Spec, "ExpectedRevision": rev, "RevertRevision": version})
+		_, rev, _, _ = s.readTunnel(ctx, originalID)
+	}
+	clone := original.Spec
+	clone.Token = ""
+	clone.NoisePrivate = ""
+	clone.NoisePublic = ""
+	clone.Routes = append([]engine.Route{}, clone.Routes...)
+	for i := range clone.Routes {
+		clone.Routes[i].Token = ""
+		clone.Routes[i].User.Port += 200
+	}
+	clone.TransportBind.Port = 28200
+	clone.TransportRemote.Port = 28200
+	probe := *clone.Application
+	probe.Endpoint.Port = clone.Routes[0].User.Port
+	clone.Application = &probe
+	cloneID := applyPlan(map[string]any{"RequestKey": "native_clone", "Name": "Synthetic cloned route", "Spec": clone})
+	cloned, cloneRevision, _, e := s.readTunnel(ctx, cloneID)
+	if e != nil || cloned.Spec.Token == original.Spec.Token || cloned.Spec.NoisePublic == original.Spec.NoisePublic {
+		t.Fatal("clone reused private authentication")
+	}
+	for _, action := range []string{"disable", "start", "remove"} {
+		status, result := request(t, client, srv.URL+"/api/tunnels/"+cloneID+"/actions", "POST", map[string]any{"RequestKey": "native_clone_" + action, "Action": action, "ExpectedRevision": cloneRevision, "Confirm": true})
+		if status != 200 {
+			t.Fatal("native clone action rejected: " + action)
+		}
+		job, _ := result["operation_id"].(string)
+		wait(job)
+	}
+	if _, _, _, e = s.readTunnel(ctx, cloneID); e == nil {
+		t.Fatal("removed clone retained as managed")
+	}
+	t.Log("Real API clone generated independent identities; native version restoration, batch exactly-once actions, disable/start and owned removal passed")
+	status, _ = request(t, client, srv.URL+"/api/certificates/native_tls/policy", "PUT", map[string]any{"expected_policy_revision": 0, "auto_deploy": true, "confirm": true})
+	if status != 200 {
+		t.Fatal("explicit automatic deployment policy was not saved")
+	}
 	// Renew and deploy a new identity to every real TLS consumer. A stopped
 	// consumer must remain stopped throughout coordinated certificate rotation.
 	var tlsTunnel string
@@ -267,6 +346,56 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+p+"/probe',timeout=5).read()")
 	}
 	t.Log("Real self-signed TLS/WSS issuance, deployment, linked renewal and automatic coordinated rotation passed; stopped consumer and client private-key isolation preserved")
+	// Activate a different listener identity without client trust in this disposable
+	// lab, then stop its agent. The native systemd timer must restore real traffic.
+	priorCert, _, e := s.readCertificate(ctx, "native_tls")
+	if e != nil {
+		t.Fatal(e)
+	}
+	candidate := priorCert
+	if e = makeSelfSigned(&candidate); e != nil {
+		t.Fatal(e)
+	}
+	var previousHash string
+	s.DB.QueryRow(ctx, "SELECT hash FROM certificate_links WHERE certificate_id='native_tls' AND node_id=$1 LIMIT 1", ids[0]).Scan(&previousHash)
+	consumerRows, e := s.DB.Query(ctx, "SELECT instance_id FROM certificate_links WHERE certificate_id='native_tls' AND node_id=$1 AND instance_id<>''", ids[0])
+	if e != nil {
+		t.Fatal(e)
+	}
+	consumers := []string{}
+	for consumerRows.Next() {
+		var id string
+		consumerRows.Scan(&id)
+		consumers = append(consumers, id)
+	}
+	consumerRows.Close()
+	certificateStep := func(stage string, p nodeops.Certificate) {
+		p.ID = "native_tls"
+		p.RequestID = "native_local_cert_rollback"
+		p.Stage = stage
+		p.Confirm = true
+		raw, _ := json.Marshal(p)
+		job, e := s.newJob(ctx, "native_cert_timeout_"+stage, "node", ids[0], "Native timed certificate "+stage, JobPayload{Node: ids[0], Kind: "certificate.deploy", Payload: raw})
+		if e != nil {
+			t.Fatal(e)
+		}
+		wait(job)
+	}
+	certificateStep("prepare", nodeops.Certificate{Domain: candidate.Domain, Cert: candidate.Cert, Key: candidate.Key, PKCS12Password: candidate.PKCS12Password, ExpectedHash: previousHash, Instances: consumers})
+	certificateStep("activate", nodeops.Certificate{Deadline: time.Now().Add(30 * time.Second)})
+	run("exec", nodes[0], "systemctl", "stop", "tunnelmanager-agent")
+	time.Sleep(35 * time.Second)
+	for _, p := range []string{"24463", "24473"} {
+		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+p+"/probe',timeout=5).read()")
+	}
+	run("exec", nodes[0], "systemctl", "start", "tunnelmanager-agent")
+	for attempt := 0; attempt < 90 && !s.isConnected(ids[0]); attempt++ {
+		time.Sleep(time.Second)
+	}
+	if !s.isConnected(ids[0]) {
+		t.Fatal("agent did not reconnect after native certificate timeout")
+	}
+	t.Log("Actual listener certificate mutation reverted through an independent systemd timer with its agent stopped; real TLS/WSS HTTP paths recovered")
 	// A real per-service RAM policy continues while the control route is blackholed.
 	var tunnelID string
 	if s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native rathole noise'").Scan(&tunnelID) != nil {

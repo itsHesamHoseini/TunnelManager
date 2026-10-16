@@ -1,0 +1,69 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+  actions: read
+  packages: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Require the exact source to pass every native workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "v$(cat VERSION)"
+          for attempt in $(seq 1 60); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" > /tmp/source-runs.json
+            if jq -e '["Verify","Clean OS installer","Native engine workflows"] as $names | [.workflow_runs[] | select(.conclusion=="success") | .name] as $ok | all($names[]; . as $n | $ok | index($n)!=null)' /tmp/source-runs.json >/dev/null; then exit 0; fi
+            echo "Waiting for exact-source native checks ($attempt/60)."
+            sleep 30
+          done
+          echo 'Native source checks did not pass; release blocked.' >&2
+          exit 1
+      - uses: actions/setup-go@v5
+        with: {go-version-file: go.mod}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - run: npm ci --prefix web && npm run build --prefix web
+      - run: node scripts/build.mjs
+      - name: Check reproducibility and artifact dependencies
+        run: |
+          cp artifacts/SHA256SUMS /tmp/first-build-sums
+          node scripts/build.mjs
+          diff /tmp/first-build-sums artifacts/SHA256SUMS
+          file artifacts/tunnelmanager-linux-*
+          (cd artifacts && sha256sum -c SHA256SUMS)
+      - id: release_meta
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/release.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/itshesamhoseini/tunnelmanager-controller:${{ github.ref_name }},ghcr.io/itshesamhoseini/tunnelmanager-controller:latest
+          build-args: |
+            VERSION=${{ steps.release_meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+      - name: Publish checksummed artifacts and exact bootstrap
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/tunnelmanager-linux-amd64 artifacts/tunnelmanager-linux-arm64 artifacts/SHA256SUMS install.sh --verify-tag --title "TunnelManager $GITHUB_REF_NAME" --notes-file docs/RELEASE-NOTES.md
+      - name: Verify the actual published bootstrap download
+        env:
+          TUNNELMANAGER_RELEASE: ${{ github.ref_name }}
+        run: sh install.sh version

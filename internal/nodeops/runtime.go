@@ -27,6 +27,7 @@ import (
 type Runtime struct {
 	ConfigDir, StateDir string
 	mu                  sync.Mutex
+	lastPrune           time.Time
 }
 
 func New(c config.Config) *Runtime {

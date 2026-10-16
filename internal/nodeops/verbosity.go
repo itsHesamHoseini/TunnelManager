@@ -156,6 +156,11 @@ func (r *Runtime) restoreLogging(ctx context.Context, id string) error {
 		if e != nil {
 			return e
 		}
+		if j.Phase == "active" {
+			if _, _, e = registryRaw(r, v.ID); e != nil {
+				return e
+			}
+		}
 		if v.Epoch != id && !strings.HasPrefix(v.Epoch, "intent_") && !(j.Phase == "applying" && v.Epoch == j.Instance.Epoch) {
 			return errors.New("newer_change_blocks_logging_restore")
 		}

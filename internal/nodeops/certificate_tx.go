@@ -219,6 +219,9 @@ func (r *Runtime) prepareCert(ctx context.Context, q Certificate) (any, error) {
 	if !q.TrustOnly {
 		next["key.pem"] = []byte(q.Key)
 		if q.PKCS12Password != "" {
+			if _, e := exec.LookPath("openssl"); e != nil {
+				return nil, errors.New("openssl_required_for_rathole_tls_identity")
+			}
 			if strings.ContainsAny(q.PKCS12Password, "\r\n") {
 				return nil, errors.New("invalid_pkcs12_password")
 			}
@@ -431,6 +434,11 @@ func (r *Runtime) revertCert(parent context.Context, id string, compensate bool)
 		}
 	}
 	if j.Phase != "prepared" {
+		for _, member := range j.Members {
+			if _, _, e := registryRaw(r, member.Instance.ID); e != nil {
+				return e
+			}
+		}
 		// A partially written activation may contain old or new files only. Refuse
 		// to overwrite an unrelated manual edit or a later deployment.
 		current, err := r.certFiles(j.Certificate)

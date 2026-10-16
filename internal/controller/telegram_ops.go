@@ -121,6 +121,10 @@ func (s *Server) telegramCommand(ctx context.Context, update int64, message stri
 		return
 	}
 	payload := JobPayload{Tunnel: target, Name: friendly, Spec: record.Spec, Instances: record.Instances, Hashes: record.Hashes, ExpectedRevision: revision, Action: action, Confirm: true, AwaitTelegram: true, TelegramReply: true}
+	if e = s.expand(ctx, &payload); e != nil {
+		s.telegramText(ctx, "اثر سرویس مشترک نیازمند بررسی است؛ عملیات را از صفحهٔ تونل در پنل بازبینی کنید.")
+		return
+	}
 	id, e := s.newJob(ctx, requestKey, "tunnel-action", target, friendly, payload)
 	if e != nil {
 		return
@@ -137,8 +141,10 @@ func (s *Server) telegramCommand(ctx context.Context, update int64, message stri
 		return
 	}
 	routes := []string{}
-	for _, r := range record.Spec.Routes {
-		routes = append(routes, r.Name)
+	for _, g := range payload.Updates {
+		for _, r := range g.Record.Spec.Routes {
+			routes = append(routes, g.Name+" / "+r.Name)
+		}
 	}
 	text := "درخواست «" + action + "» برای «" + friendly + "»\nمسیرهای سرویس‌های تحت تأثیر: " + strings.Join(routes, "، ") + "\nممکن است ارتباط این مسیرها قطع شود. توقف عمدی در بازیابی حفظ می‌شود.\nاین تأیید فقط دو دقیقه و یک‌بار معتبر است."
 	_, e = s.bot(ctx, "sendMessage", map[string]any{"chat_id": st.ChatID, "text": text, "reply_markup": map[string]any{"inline_keyboard": [][]map[string]string{{{"text": "تأیید و اجرا", "callback_data": "opok:" + token}, {"text": "انصراف", "callback_data": "opno:" + token}}}}})
@@ -178,7 +184,11 @@ func (s *Server) notifyAlerts(ctx context.Context) {
 	if !st.TelegramAlerts {
 		return
 	}
-	rows, e := s.DB.Query(ctx, `SELECT a.id,COALESCE(n.name,t.name,c.name,a.target),a.code FROM alerts a LEFT JOIN nodes n ON n.id=a.target LEFT JOIN tunnels t ON t.id=a.target LEFT JOIN certificates c ON c.id=a.target WHERE a.active AND NOT a.acknowledged AND(a.suppressed_until IS NULL OR a.suppressed_until<now())AND(a.notified IS NULL OR a.notified<now()-interval '1 hour')AND(a.notification_attempt IS NULL OR a.notification_attempt<now()-interval '5 minutes')ORDER BY a.created LIMIT 3`)
+	repeat := st.AlertRepeatMinutes
+	if repeat == 0 {
+		repeat = 60
+	}
+	rows, e := s.DB.Query(ctx, `SELECT a.id,COALESCE(n.name,t.name,c.name,a.target),a.code FROM alerts a LEFT JOIN nodes n ON n.id=a.target LEFT JOIN tunnels t ON t.id=a.target LEFT JOIN certificates c ON c.id=a.target WHERE a.active AND NOT a.acknowledged AND(a.suppressed_until IS NULL OR a.suppressed_until<now())AND(a.notified IS NULL OR a.notified<now()-$1*interval '1 minute')AND(a.notification_attempt IS NULL OR a.notification_attempt<now()-interval '5 minutes')ORDER BY a.created LIMIT 3`, repeat)
 	if e != nil {
 		return
 	}

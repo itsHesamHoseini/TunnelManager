@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +47,40 @@ func TestCertificateIssueAndEncryptedPersistence(t *testing.T) {
 	got.Key = other.Key
 	if _, e = validateCertificate(got); e == nil {
 		t.Fatal("mismatching key accepted")
+	}
+}
+
+func TestCertificatePolicyIsIndependentCASAndRenewalKeepsIdentityPassword(t *testing.T) {
+	s, _, _ := testServer(t)
+	ctx := context.Background()
+	payload, _ := json.Marshal(CertificateRequest{Name: "Synthetic TLS", Domain: "transport.example.com", Method: "self-signed", Days: 3})
+	id, _ := s.newJob(ctx, "policy_cert_issue", "certificate", "policy_cert", "Issue", JobPayload{Kind: "issue", Certificate: "policy_cert", Payload: payload})
+	s.processJob(ctx, id)
+	original, rev, _ := s.readCertificate(ctx, "policy_cert")
+	update := func(input string) int {
+		req := httptest.NewRequest("PUT", "/api/certificates/policy_cert/policy", strings.NewReader(input))
+		req.SetPathValue("id", "policy_cert")
+		rec := httptest.NewRecorder()
+		s.certificatePolicy(rec, req)
+		return rec.Code
+	}
+	if update(`{"expected_policy_revision":0,"auto_deploy":true,"confirm":true}`) != 200 {
+		t.Fatal("policy update failed")
+	}
+	if update(`{"expected_policy_revision":0,"auto_deploy":false,"confirm":true}`) == 200 {
+		t.Fatal("concurrent policy silently overwritten")
+	}
+	q, current, _ := s.readCertificate(ctx, "policy_cert")
+	if !q.AutoDeploy || current != rev || q.Key != original.Key {
+		t.Fatal("policy changed issued revision or key")
+	}
+	q.AutoDeploy = false
+	q.PKCS12Password = ""
+	payload, _ = json.Marshal(q)
+	job, _ := s.newJob(ctx, "policy_cert_renew", "certificate", "policy_cert", "Renew", JobPayload{Kind: "issue", Certificate: "policy_cert", ExpectedRevision: rev, Payload: payload})
+	s.processJob(ctx, job)
+	renewed, current, e := s.readCertificate(ctx, "policy_cert")
+	if e != nil || current != rev+1 || !renewed.AutoDeploy || renewed.PKCS12Password != original.PKCS12Password || renewed.Cert == original.Cert {
+		t.Fatal("renewal changed policy/password or did not issue new certificate")
 	}
 }

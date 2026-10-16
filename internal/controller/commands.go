@@ -372,7 +372,7 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 	}
 }
 func (s *Server) operationList(w http.ResponseWriter, r *http.Request) {
-	rows, e := s.DB.Query(r.Context(), "SELECT id,kind,target,name,phase,error,created,updated,deadline FROM operations ORDER BY created DESC LIMIT 100")
+	rows, e := s.DB.Query(r.Context(), `SELECT id,kind,target,name,phase,error,created,updated,deadline,COALESCE(result->>'status',CASE WHEN kind='tunnel-check' THEN CASE WHEN result->'transport'->>'status'='failed' OR result->'tls'->>'status'='failed' OR result->'application'->>'status'='failed' THEN 'failed' WHEN result->'application'->>'status'='unconfigured' THEN 'partial' ELSE result->'application'->>'status' END END) FROM operations ORDER BY created DESC LIMIT 100`)
 	if e != nil {
 		fail(w, 503, "operations_unavailable", "Retry shortly.", "کمی بعد دوباره تلاش کنید.")
 		return
@@ -383,8 +383,9 @@ func (s *Server) operationList(w http.ResponseWriter, r *http.Request) {
 		var id, kind, target, name, phase, code string
 		var created, updated time.Time
 		var deadline *time.Time
-		rows.Scan(&id, &kind, &target, &name, &phase, &code, &created, &updated, &deadline)
-		items = append(items, map[string]any{"id": id, "kind": kind, "target": target, "name": name, "phase": phase, "error": code, "created": created, "updated": updated, "deadline": deadline})
+		var check *string
+		rows.Scan(&id, &kind, &target, &name, &phase, &code, &created, &updated, &deadline, &check)
+		items = append(items, map[string]any{"id": id, "kind": kind, "target": target, "name": name, "phase": phase, "error": code, "created": created, "updated": updated, "deadline": deadline, "check_status": check})
 	}
 	write(w, items)
 }

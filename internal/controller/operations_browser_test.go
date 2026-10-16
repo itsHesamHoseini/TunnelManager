@@ -37,6 +37,10 @@ func TestOperationalPagesInBrowser(t *testing.T) {
 	}
 	inventory, _ := json.Marshal(map[string]any{"instances": []nodeops.Discovered{{Instance: nodeops.Instance{ID: "synthetic_server", Name: "Synthetic shared service", Unit: "rathole-synthetic.service", Engine: "rathole", Version: "0.5.0", Role: "server", Managed: true}, Parsed: engine.Parsed{Role: "server", Transport: "noise", Bind: "0.0.0.0:28100"}, Configuration: "[server]\nbind_addr='0.0.0.0:28100'\ndefault_token='[redacted]'\n", Active: "active"}}})
 	s.DB.Exec(ctx, "UPDATE nodes SET inventory=$1,inventory_at=now() WHERE id='listener'", inventory)
+	diagnostic, _ := s.newJob(ctx, "fixture_diagnostic", "node", "listener", "Fixture diagnostic failed", JobPayload{Node: "listener", Kind: "diagnostic", Payload: json.RawMessage(`{"kind":"tcp","endpoint":{"host":"192.0.2.10","port":443}}`)})
+	result, _ := json.Marshal(map[string]any{"status": "failed", "kind": "tcp", "target": "192.0.2.10:443", "at": time.Now(), "code": "connection_or_protocol_check_failed"})
+	s.DB.Exec(ctx, "UPDATE operations SET phase='succeeded',result=$1 WHERE id=$2", result, diagnostic)
+	s.newJob(ctx, "fixture_queued", "node", "listener", "Fixture queued operation", JobPayload{Node: "listener", Kind: "inventory"})
 	cmd := exec.Command("node", "web/tests/operations.mjs")
 	cmd.Dir = filepath.Join("..", "..")
 	cmd.Env = append(os.Environ(), "TUNNELMANAGER_TEST_URL="+srv.URL)

@@ -168,6 +168,15 @@ func (s *Server) tunnelHistory(w http.ResponseWriter, r *http.Request) {
 	write(w, out)
 }
 func (s *Server) evaluateAlerts(ctx context.Context) {
+	settings := s.settingsCopy()
+	offline := settings.AlertOfflineSeconds
+	if offline == 0 {
+		offline = 150
+	}
+	days := settings.AlertCertificateDays
+	if days == 0 {
+		days = 14
+	}
 	rows, e := s.DB.Query(ctx, "SELECT id,name,seen FROM nodes WHERE approved")
 	if e != nil {
 		return
@@ -184,7 +193,7 @@ func (s *Server) evaluateAlerts(ctx context.Context) {
 	}
 	rows.Close()
 	for _, v := range nodes {
-		s.setAlert(ctx, "node-offline", v.id, "warning", "node_observation_stale", v.seen == nil || time.Since(*v.seen) > 150*time.Second)
+		s.setAlert(ctx, "node-offline", v.id, "warning", "node_observation_stale", v.seen == nil || time.Since(*v.seen) > time.Duration(offline)*time.Second)
 	}
 	rows, e = s.DB.Query(ctx, "SELECT id,desired,health FROM tunnels")
 	if e == nil {
@@ -209,7 +218,7 @@ func (s *Server) evaluateAlerts(ctx context.Context) {
 			var id string
 			var until time.Time
 			rows.Scan(&id, &until)
-			s.setAlert(ctx, "certificate", id, "warning", "certificate_expires_soon", time.Until(until) < 14*24*time.Hour)
+			s.setAlert(ctx, "certificate", id, "warning", "certificate_expires_soon", time.Until(until) < time.Duration(days)*24*time.Hour)
 		}
 		rows.Close()
 	}

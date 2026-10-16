@@ -223,6 +223,42 @@ func TestNativeBothEngines(t *testing.T) {
 			if v := call(a, "instance.action", map[string]any{"ID": instance[a], "Action": "restart", "ExpectedHash": hashes[a], "Confirm": true}); v.OK || v.Code != "manual_config_drift" {
 				t.Fatal("manual config drift was not blocked")
 			}
+			for _, node := range nodes {
+				unit := "tunnelmanager-instance-" + instance[node] + ".service"
+				pid := string(run("exec", node, "systemctl", "show", unit, "--property=MainPID", "--value"))
+				require(node, "instance.action", map[string]any{"ID": instance[node], "Action": "revoke", "ExpectedHash": hashes[node], "Confirm": true})
+				inventory := require(node, "inventory", map[string]any{"MatchKey": ""})
+				var data struct {
+					Instances []Discovered `json:"instances"`
+				}
+				json.Unmarshal(inventory.Data, &data)
+				found := false
+				for _, d := range data.Instances {
+					if d.Unit == unit {
+						found = true
+						if d.Managed || d.Version != version || d.Reason != "" {
+							t.Fatal("revoked service not actionable through read-only discovery")
+						}
+						require(node, "instance.adopt", map[string]any{"ID": d.ID, "Hash": d.Hash, "Fingerprint": d.Fingerprint, "DefinitionHash": d.DefinitionHash, "Confirm": true})
+						instance[node] = d.ID
+						hashes[node] = d.Hash
+						break
+					}
+				}
+				if !found {
+					t.Fatal("existing native service missing from discovery")
+				}
+				if pid != string(run("exec", node, "systemctl", "show", unit, "--property=MainPID", "--value")) {
+					t.Fatal("discovery/adoption restarted existing infrastructure")
+				}
+			}
+			adoptedSpec := spec
+			adoptedSpec.Routes = append([]engine.Route{}, spec.Routes...)
+			adoptedSpec.Routes[0].User.Port += 200
+			change(name+"_adopted_edit", adoptedSpec, true)
+			if call(a, "instance.action", map[string]any{"ID": instance[a], "Action": "remove", "ExpectedHash": hashes[a], "Confirm": true}).OK {
+				t.Fatal("original adopted unit removed")
+			}
 			t.Log("Actual engine download/checksum, two Linux systemd peers, two shared routes, HTTP data plane, unrelated port conflict, local timeout rollback, intentional stop/start and manual drift passed")
 		})
 	}

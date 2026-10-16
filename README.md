@@ -1,39 +1,52 @@
 # TunnelManager
-A neutral, self-hosted control panel for Backhaul and Rathole across Linux servers.
-Go + PostgreSQL + React/TypeScript. Native node agents initiate outbound TLS connections. Tunnel traffic continues when the controller is unavailable.
+Self-hosted Backhaul/Rathole operations across Linux servers. Go + PostgreSQL + React/TypeScript; Persian RTL/English, light/dark themes. Native agents initiate verified outbound TLS connections. Tunnels continue without the controller.
 
-## Quick start
-M1–M3 are implemented and deployed: protected login, reversible controller lifecycle and approved native nodes with real host metrics. Tunnel creation/adoption/control belongs to M4; see the [verified evidence and limits](docs/M1-M3-REPORT.md). This is not the complete product release.
-Build from the reviewed checkout or use a verified local artifact; no tagged release is published yet:
+[فارسی](README.fa.md) · [Operations](docs/OPERATIONS.md) · [Acceptance evidence](docs/REQUIREMENTS.md) · [Progress](docs/PROGRESS.md)
+
+## Install
+Ubuntu 22.04/24.04 and Debian 12 have native installer tests. Linux amd64/arm64 binaries are built; native ARM64 and Debian 11 remain untested. Download, inspect, then execute:
+```sh
+curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.com/itsHesamHoseini/TunnelManager/main/install.sh
+less install.sh
+sudo sh install.sh setup --with-local-node
+```
+The bootstrap verifies SHA256. The wizard previews changes, domain/IP, port (9443), TLS and account setup. Docker installation is explicit. Enroll TOTP personally and save recovery codes. See [release status and limits](docs/RELEASE-NOTES.md); before publication use a reviewed checkout:
 ```sh
 npm ci --prefix web
 npm run build --prefix web
 node scripts/build.mjs
 sudo env TUNNELMANAGER_BINARY=./artifacts/tunnelmanager-linux-amd64 TUNNELMANAGER_CHECKSUM_FILE=./artifacts/SHA256SUMS sh install.sh setup --with-local-node
 ```
-Requires Node 24 and the Go version in go.mod on the build machine. The installer machine needs only the resulting static binary. The wizard previews the plan; Docker installation is a separate explicit choice. The first account must enroll TOTP and save recovery codes.
-Default panel port: 9443. Runtime configuration: /etc/tunnelmanager. No SSH configuration changes.
-See [progress](docs/PROGRESS.md), [contracts](docs/CONTRACTS.md), [acceptance](docs/REQUIREMENTS.md) and [Persian guide](README.fa.md).
+Build machine: Node 24, Go 1.27.2. Target: static binary and systemd; controller uses Docker/Compose. Default runtime paths: /opt/tunnelmanager, /etc/tunnelmanager, /var/lib/tunnelmanager. Only HTTPS is published.
 
-## Architecture and security
-Controller, PostgreSQL and HTTPS edge run in Compose. Only the HTTPS edge port is published. Native agents run under systemd, enroll using single-use short-lived tokens, require administrator approval, and prove their own locally generated identity before sending data.
-Password + mandatory TOTP or single-use recovery codes. Optional Telegram approval. AEAD-encrypted secrets, master key outside the database, hashed sessions, typed actions and two-layer rate limits.
-Host observations do not prove tunnel/application health; unknown and stale states are preserved.
-Native clean installation/rerun/backup/restore/fault rollback is tested on Ubuntu 22.04/24.04 and Debian 12. Debian 11 and native ARM64 remain untested targets. Linux amd64/arm64 artifacts are cross-built.
+## Everyday work
+- Add a node with a short-lived hidden enrollment token, then compare and approve its identity. Discover without writes; unique evidence pairs peers, and unmatched services stay actionable. Manual import creates an observation record. Explicit adoption is required before changes.
+- Install a checksum-pinned official engine. Create/edit a tunnel with independent user entry, transport listener/dialer and backend endpoints. Preview redacted current/proposed configs, shared-route impact, port conflicts and drift.
+- Both nodes prepare backups and independent local rollback timers before activation. Check the actual path and explicitly confirm within 90 seconds, or revert. Configuration edits preserve intentional stops.
+- Inspect/clone/restore versions; start, stop, restart, disable, remove owned instances or revoke management while preserving files/services. Batch actions execute each distinct shared instance once.
+- Read bounded redacted logs, enable temporary detailed logging with local restoration, and run node-sourced TCP/TLS/HTTP/echo/ping or explicitly bounded speed samples. The connectivity matrix covers known transport endpoints, not an invented full mesh.
+- Upload, self-sign or issue ACME DNS-01 certificates with a scoped Cloudflare token. Deploy identity to listeners and public trust to peers; linked rotation has drift checks, backups and local rollback. Automatic issuance/deployment are separate policies.
+- Set sustained per-service recovery thresholds, cooldown and daily ceilings. Intentional stops persist; no host reboot. Monitor fresh measured history (7/30/90 days), configurable alerts/suppression and optional expiring confirmed Telegram operations.
 
-## Development
-`npm ci --prefix web && npm run build --prefix web`; `go test -p 1 ./... && go vet ./...`.
-Set TEST_DATABASE_URL to an isolated PostgreSQL database to execute integration tests.
-`node scripts/neutrality.mjs && node scripts/secrets.mjs`.
-Docker smoke: `sh scripts/compose-smoke.sh`.
+## Security and limits
+Password + mandatory TOTP/recovery, hashed sessions, origin checks, edge/application limits, encrypted durable jobs/secrets and a master key outside PostgreSQL. Agents accept typed bounded actions only; no shell/web terminal. This outbound-agent architecture does not use or modify SSH.
 
-## Browser evidence
-Synthetic server data, real browser/API:
-![Persian server resources](docs/evidence/m3-resources-fa.png)
-Deployment screenshots and private host inputs are kept outside tracked files.
+Unsupported versions, mappings and identity/proxy semantics remain visible/read-only with a reason. Backhaul 0.7.2 WSS encrypts but does not verify peer certificate identity: explicit acknowledgement is required. Independent panel TLS probes are stricter and do not change engine behavior. Rathole Noise uses a selected peer key; TLS uses explicit certificate trust.
 
-## FAQ
-No application users, subscriptions or inbound management. No web terminal. No automatic adoption of existing services. Existing infrastructure is never rewritten merely because it was discovered.
+Counters describe the observed host interface, not per-tunnel usage or complete billing. Missing observations are not fabricated. VLESS application health stays unconfigured without a matching application check; TCP success is insufficient. No application users/inbounds/subscriptions are managed. Live CA/DNS/Telegram provider delivery is untested without owner accounts.
 
-## Credits
-[Backhaul](https://github.com/Musixal/Backhaul) and [Rathole](https://github.com/rathole-org/rathole) remain independent projects; engine downloads and license checks belong to the adapter milestone.
+## Development and evidence
+```sh
+npm ci --prefix web && npm run build --prefix web
+go test -p 1 ./...
+go vet ./...
+node scripts/neutrality.mjs && node scripts/secrets.mjs
+```
+Set TEST_DATABASE_URL to isolated PostgreSQL for integration tests; TUNNELMANAGER_BROWSER_TESTS=1 enables real Chrome fixtures. Native CI uses disposable Linux/systemd peers and actual engines, including failure paths; never production faults. The acceptance register distinguishes native, browser, fixture and untested evidence.
+
+![Persian workspace; clearly synthetic fixture data](docs/evidence/m4-tunnels-fixture-fa.png)
+
+## Architecture and credits
+One Go executable embeds UI and installer. PostgreSQL holds authority/history/jobs; bounded workers and native agents avoid a separate queue/collector. CSS tokens and small React components preserve the calm visual system without a component/chart framework. The terminal wizard supports masked inputs, Persian/English and NO_COLOR without a TUI dependency.
+
+[Backhaul](https://github.com/Musixal/Backhaul), [Rathole](https://github.com/rathole-org/rathole) and [Vazirmatn](https://github.com/rastikerdar/vazirmatn) are independent projects. [Licenses and pinned artifact trust](docs/THIRD-PARTY.md). Project: MIT; independent engine licenses are unchanged.

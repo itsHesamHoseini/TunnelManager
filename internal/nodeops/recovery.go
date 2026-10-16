@@ -74,6 +74,7 @@ func (r *Runtime) Observe(ctx context.Context, data protocol.Telemetry) {
 		return
 	}
 	defer unlock()
+	r.prune(time.Now())
 	entries, _ := os.ReadDir(r.file("recovery"))
 	for _, entry := range entries {
 		if ctx.Err() != nil {

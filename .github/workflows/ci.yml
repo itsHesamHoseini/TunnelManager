@@ -27,6 +27,9 @@ jobs:
       - run: npm ci --prefix web
       - run: npm run build --prefix web
       - run: node scripts/check.mjs
+      - run: npm audit --prefix web --audit-level=low
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - run: govulncheck ./...
       - run: go install github.com/zricethezav/gitleaks/v8@v8.24.3
       - run: gitleaks git . --log-opts="--all" --redact --no-banner
       - run: gitleaks dir . --redact --no-banner
