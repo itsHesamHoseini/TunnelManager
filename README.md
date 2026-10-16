@@ -20,6 +20,7 @@ sudo env TUNNELMANAGER_BINARY=./artifacts/tunnelmanager-linux-amd64 TUNNELMANAGE
 Build machine: Node 24, Go 1.27.2. Target: static binary and systemd; controller uses Docker/Compose. Default runtime paths: /opt/tunnelmanager, /etc/tunnelmanager, /var/lib/tunnelmanager. Only HTTPS is published.
 
 ## Everyday work
+[Persian task guide](docs/QUICKSTART.fa.md)
 - Add a node with a short-lived hidden enrollment token, then compare and approve its identity. Discover without writes; unique evidence pairs peers, and unmatched services stay actionable. Manual import creates an observation record. Explicit adoption is required before changes.
 - Install a checksum-pinned official engine. Create/edit a tunnel with independent user entry, transport listener/dialer and backend endpoints. Preview redacted current/proposed configs, shared-route impact, port conflicts and drift.
 - Both nodes prepare backups and independent local rollback timers before activation. Check the actual path and explicitly confirm within 90 seconds, or revert. Configuration edits preserve intentional stops.
