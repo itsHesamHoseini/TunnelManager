@@ -91,7 +91,10 @@ func TestNativeBoundedDiagnostics(t *testing.T) {
 	if data["verified"] != true {
 		t.Fatal("TLS identity was not verified")
 	}
-	_, result, data = call(Diagnostic{Kind: "tls", Endpoint: endpoint(tlsWeb.Listener.Addr().String()), CA: "diagnostic_trust", ServerName: "wrong.example.com"})
+	if tlsWeb.Certificate().VerifyHostname("rejected.invalid") == nil {
+		t.Fatal("negative TLS fixture unexpectedly matches the certificate")
+	}
+	_, result, data = call(Diagnostic{Kind: "tls", Endpoint: endpoint(tlsWeb.Listener.Addr().String()), CA: "diagnostic_trust", ServerName: "rejected.invalid"})
 	if !result.OK || data["status"] != "failed" {
 		t.Fatal("wrong TLS hostname was accepted")
 	}
