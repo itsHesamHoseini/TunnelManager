@@ -5,7 +5,7 @@ permissions:
 jobs:
   engines:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     services:
       postgres:
         image: postgres:18
@@ -30,7 +30,7 @@ jobs:
       - run: go test -tags nativelab -timeout 25m -v ./internal/nodeops
         env:
           TUNNELMANAGER_NATIVE_LAB: '1'
-      - run: go test -tags nativelab -run TestNativeControllerBrowserWorkflow -timeout 20m -v ./internal/controller
+      - run: go test -tags nativelab -run TestNativeControllerBrowserWorkflow -timeout 25m -v ./internal/controller
         env:
           TUNNELMANAGER_NATIVE_LAB: '1'
       - uses: actions/upload-artifact@v4

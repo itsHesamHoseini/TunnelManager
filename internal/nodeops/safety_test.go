@@ -80,3 +80,37 @@ func TestCertificateCompensationRefusesNewerDeploymentAndManualFiles(t *testing.
 		t.Fatal("private key drift not hashed")
 	}
 }
+
+func TestUnconfirmedDriftPreservedAndExplicitReleaseOnlyChangesJournal(t *testing.T) {
+	r := &Runtime{StateDir: t.TempDir()}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	unit := filepath.Join(dir, "unit.service")
+	os.WriteFile(path, []byte("manual"), 0600)
+	os.WriteFile(unit, []byte("new unit"), 0600)
+	v := Instance{ID: "instance1", Managed: true, Path: path, Hash: engine.Digest([]byte("candidate")), UnitPath: unit, UnitHash: engine.Digest([]byte("new unit"))}
+	r.save(v)
+	j := Journal{Change: Change{ID: "change1", Instance: v.ID}, Candidate: v, UnitPath: unit, NewConfig: "candidate", NewUnit: []byte("new unit"), Phase: "awaiting_confirmation"}
+	writeJSON(r.file("changes", "change1.json"), j)
+	if e := r.revert(context.Background(), "change1", false); e == nil || e.Error() != "manual_config_drift" {
+		t.Fatal("unconfirmed manual edit overwritten")
+	}
+	b, _ := json.Marshal(map[string]any{"ID": "change1", "Kind": "config", "Confirm": true})
+	if _, e := r.releaseRecovery(context.Background(), b); e != nil {
+		t.Fatal(e)
+	}
+	if e := r.pending(v.ID, ""); e != nil {
+		t.Fatal(e)
+	}
+	if e := r.PendingRollback(); e != nil {
+		t.Fatal(e)
+	}
+	if e := r.revert(context.Background(), "change1", true); e != nil {
+		t.Fatal(e)
+	}
+	current, _ := os.ReadFile(path)
+	definition, _ := os.ReadFile(unit)
+	if string(current) != "manual" || string(definition) != "new unit" {
+		t.Fatal("release modified selected infrastructure")
+	}
+}

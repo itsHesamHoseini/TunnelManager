@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
+	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
 	"github.com/itsHesamHoseini/TunnelManager/internal/protocol"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -133,6 +134,7 @@ func (s *Server) command(ctx context.Context, op, node, stage, kind string, payl
 }
 
 type JobPayload struct {
+	PreserveCurrent  bool              `json:"preserve_current,omitempty"`
 	RecoveryAttempt  int               `json:"recovery_attempt,omitempty"`
 	FailureCode      string            `json:"failure_code,omitempty"`
 	AwaitTelegram    bool              `json:"await_telegram,omitempty"`
@@ -177,7 +179,7 @@ func (s *Server) newJob(ctx context.Context, key, kind, target, name string, pay
 	e = s.DB.QueryRow(ctx, "INSERT INTO operations(id,request_key,kind,target,name,cipher,request_hash,phase)VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(request_key) DO UPDATE SET request_key=EXCLUDED.request_key WHERE operations.request_hash=EXCLUDED.request_hash RETURNING id", id, key, kind, target, name, cipher, payload.RequestHash, initial).Scan(&existing)
 	if e != nil {
 		var dbError *pgconn.PgError
-		if errors.As(e, &dbError) && dbError.ConstraintName == "operations_one_certificate_change" {
+		if errors.As(e, &dbError) && strings.HasPrefix(dbError.ConstraintName, "operations_one_certificate_change") {
 			return "", errors.New("certificate_operation_in_progress")
 		}
 		return "", errors.New("request_key_reused_with_different_input")
@@ -224,7 +226,7 @@ func (s *Server) Operations(ctx context.Context) {
 			s.DB.Exec(ctx, "UPDATE operations SET phase='expired',error='telegram_confirmation_expired',updated=now() WHERE phase='awaiting_telegram' AND NOT EXISTS(SELECT 1 FROM telegram_actions t WHERE t.operation_id=operations.id AND t.expires>now() AND NOT t.consumed) AND created<now()-interval '2 minutes'")
 			s.DB.Exec(ctx, "UPDATE operations SET phase='reverting',updated=now() WHERE kind='plan' AND phase='awaiting_confirmation' AND deadline<now()")
 			s.DB.Exec(ctx, "UPDATE operations SET phase='expired',updated=now() WHERE phase='ready' AND updated<now()-interval '10 minutes'")
-			rows, e := s.DB.Query(ctx, "SELECT id FROM operations WHERE phase IN ('queued','applying','confirming','reverting','running') OR(phase='recovery_pending' AND updated<now()-interval '30 seconds') ORDER BY created LIMIT 30")
+			rows, e := s.DB.Query(ctx, "SELECT id FROM operations WHERE phase IN ('queued','applying','confirming','reverting','running') OR(phase IN('recovery_pending','release_pending') AND updated<now()-interval '30 seconds') ORDER BY created LIMIT 30")
 			if e != nil {
 				continue
 			}
@@ -274,6 +276,10 @@ func (s *Server) processJob(parent context.Context, id string) {
 		return
 	}
 	defer s.notifyOperation(context.WithoutCancel(ctx), id, q)
+	if q.PreserveCurrent {
+		s.processRecoveryRelease(ctx, id, q)
+		return
+	}
 	switch kind {
 	case "node":
 		s.phase(ctx, id, "running", nil, nil)
@@ -340,7 +346,7 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 		json.Unmarshal(payload, &q)
 		s.DB.Exec(ctx, "INSERT INTO checks(node_id,target,kind,data)VALUES($1,$2,$3,$4)", node, q.Endpoint.String(), q.Kind, result.Data)
 	}
-	if kind == "instance.action" || kind == "recovery.policy" || kind == "logs.verbosity" {
+	if kind == "instance.action" || kind == "recovery.policy" || kind == "logs.verbosity" || kind == "logs.release" || kind == "instance.adopt" {
 		s.DB.Exec(ctx, "UPDATE nodes SET inventory_at=NULL WHERE id=$1", node)
 	}
 	if kind == "recovery.policy" {
@@ -352,10 +358,21 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 			s.DB.Exec(ctx, "INSERT INTO recovery_rules(node_id,instance_id,policy)VALUES($1,$2,$3)ON CONFLICT(node_id,instance_id)DO UPDATE SET policy=EXCLUDED.policy", node, policy.ID, result.Data)
 		}
 	}
+	if kind == "instance.adopt" {
+		var input struct{ ID string }
+		json.Unmarshal(payload, &input)
+		for _, t := range s.affected(ctx, node, input.ID) {
+			s.DB.Exec(ctx, "UPDATE tunnels SET managed=false,revision=revision+1,health='{}',updated=now() WHERE id=$1", t["id"])
+		}
+	}
 	if kind == "instance.action" {
 		var action struct{ ID, Action string }
 		json.Unmarshal(payload, &action)
-		if action.Action == "remove" || action.Action == "revoke" {
+		s.invalidateHealth(ctx, node, action.ID, "service_action_requires_new_check")
+		if action.Action == "revoke" {
+			s.freezeCertificateLinks(ctx, node, action.ID)
+		}
+		if action.Action == "remove" {
 			s.DB.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", node, action.ID)
 		}
 		desired := "running"
@@ -363,7 +380,11 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 			desired = action.Action
 		}
 		for _, t := range s.affected(ctx, node, action.ID) {
-			if action.Action == "remove" || action.Action == "revoke" {
+			if action.Action == "revoke" {
+				s.DB.Exec(ctx, "UPDATE tunnels SET managed=false,revision=revision+1,health='{}',updated=now() WHERE id=$1", t["id"])
+				continue
+			}
+			if action.Action == "remove" {
 				s.DB.Exec(ctx, "DELETE FROM tunnels WHERE id=$1", t["id"])
 				continue
 			}
@@ -391,14 +412,16 @@ func (s *Server) operationList(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) operationDetail(w http.ResponseWriter, r *http.Request) {
 	var id, kind, target, name, phase, code string
-	var steps, result []byte
+	var steps, result, cipher []byte
 	var deadline *time.Time
-	e := s.DB.QueryRow(r.Context(), "SELECT id,kind,target,name,phase,error,steps,result,deadline FROM operations WHERE id=$1", r.PathValue("id")).Scan(&id, &kind, &target, &name, &phase, &code, &steps, &result, &deadline)
+	e := s.DB.QueryRow(r.Context(), "SELECT id,kind,target,name,phase,error,steps,result,deadline,cipher FROM operations WHERE id=$1", r.PathValue("id")).Scan(&id, &kind, &target, &name, &phase, &code, &steps, &result, &deadline, &cipher)
 	if e != nil {
 		fail(w, 404, "operation_missing", "Operation not found.", "عملیات پیدا نشد.")
 		return
 	}
-	write(w, map[string]any{"id": id, "kind": kind, "target": target, "name": name, "phase": phase, "error": code, "steps": json.RawMessage(steps), "result": json.RawMessage(result), "deadline": deadline})
+	var q JobPayload
+	s.openValue("operation:"+id, cipher, &q)
+	write(w, map[string]any{"id": id, "kind": kind, "target": target, "name": name, "phase": phase, "error": code, "steps": json.RawMessage(steps), "result": json.RawMessage(result), "deadline": deadline, "affected_tunnels": publicAffected(q)})
 }
 func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 	var q struct {
@@ -410,14 +433,43 @@ func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &q) {
 		return
 	}
-	allowed := map[string]bool{"inventory": true, "engine.install": true, "instance.config": true, "instance.status": true, "tools.status": true, "instance.action": true, "logs.read": true, "logs.verbosity": true, "diagnostic": true, "recovery.policy": true}
+	allowed := map[string]bool{"inventory": true, "engine.install": true, "instance.config": true, "instance.status": true, "tools.status": true, "instance.action": true, "instance.adopt": true, "logs.read": true, "logs.verbosity": true, "logs.release": true, "diagnostic": true, "recovery.policy": true}
 	if !allowed[q.Kind] {
 		fail(w, 400, "typed_action_required", "Select an available action.", "یکی از عملیات مجاز را انتخاب کنید.")
 		return
 	}
-	if (q.Kind == "logs.verbosity" || q.Kind == "engine.install" || q.Kind == "recovery.policy" || q.Kind == "instance.action") && !q.Confirm {
+	if (q.Kind == "logs.release" || q.Kind == "instance.adopt" || q.Kind == "logs.verbosity" || q.Kind == "engine.install" || q.Kind == "recovery.policy" || q.Kind == "instance.action") && !q.Confirm {
 		fail(w, 400, "confirmation_required", "Review and confirm this change.", "اثر تغییر را بررسی و تأیید کنید.")
 		return
+	}
+	if q.Kind == "instance.adopt" {
+		var input struct{ ID, Name string }
+		var raw []byte
+		var at *time.Time
+		if json.Unmarshal(q.Payload, &input) != nil || len(input.Name) > 100 {
+			badOperation(w, errors.New("invalid_instance_selection"))
+			return
+		}
+		if s.DB.QueryRow(r.Context(), "SELECT inventory,inventory_at FROM nodes WHERE id=$1", r.PathValue("id")).Scan(&raw, &at) != nil || at == nil || time.Since(*at) > 5*time.Minute {
+			badOperation(w, errors.New("rediscover_before_adoption"))
+			return
+		}
+		var inventory struct {
+			Instances []nodeops.Discovered `json:"instances"`
+		}
+		json.Unmarshal(raw, &inventory)
+		var selected *nodeops.Discovered
+		for i := range inventory.Instances {
+			if inventory.Instances[i].ID == input.ID {
+				selected = &inventory.Instances[i]
+				break
+			}
+		}
+		if selected == nil {
+			badOperation(w, errors.New("discovered_instance_missing"))
+			return
+		}
+		q.Payload, _ = json.Marshal(map[string]any{"ID": selected.ID, "Name": input.Name, "Hash": selected.Hash, "Fingerprint": selected.Fingerprint, "DefinitionHash": selected.DefinitionHash, "Confirm": true})
 	}
 	if q.Kind == "inventory" {
 		key := secure.Hash(string(s.Config.Key) + "discovery-match-v1")

@@ -92,6 +92,9 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 			next := q.Spec
 			next.Listener = prior.Listener
 			next.Dialer = prior.Dialer
+			next.Application = prior.Application
+			next.TransportRemote.Host = prior.TransportRemote.Host
+			next.PeerOptions = sharedPeerOptions(prior, q.Spec)
 			if q.Spec.Engine == "rathole" {
 				next.Routes = prior.Routes
 			}
@@ -113,6 +116,9 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 			if p := parts[k]; p != nil {
 				if p.Role != role {
 					return errors.New("shared_roles_disagree")
+				}
+				if p.Role == "server" {
+					p.Spec.PeerOptions = sharedPeerOptions(g.Record.Spec, p.Spec)
 				}
 				for _, route := range g.Record.Spec.Routes {
 					duplicate := false
@@ -152,6 +158,46 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 	})
 	q.Updates = group
 	return nil
+}
+
+func sharedPeerOptions(prior, requested engine.Spec) map[string]map[string]any {
+	clone := func(value any) map[string]any {
+		b, _ := json.Marshal(value)
+		out := map[string]any{}
+		json.Unmarshal(b, &out)
+		if out == nil {
+			out = map[string]any{}
+		}
+		return out
+	}
+	out := map[string]map[string]any{}
+	server := clone(requested.PeerOptions["server"])
+	services, _ := server["services"].(map[string]any)
+	if services == nil {
+		services = map[string]any{}
+	}
+	selected := map[string]bool{}
+	for _, r := range requested.Routes {
+		selected[r.ID] = true
+	}
+	oldServer := clone(prior.PeerOptions["server"])
+	oldServices, _ := oldServer["services"].(map[string]any)
+	for id, value := range oldServices {
+		if !selected[id] {
+			services[id] = value
+		}
+	}
+	if len(services) > 0 {
+		server["services"] = services
+	}
+	if len(server) > 0 {
+		out["server"] = server
+	}
+	client := clone(prior.PeerOptions["client"])
+	if len(client) > 0 {
+		out["client"] = client
+	}
+	return out
 }
 func publicAffected(q JobPayload) []map[string]any {
 	out := []map[string]any{}

@@ -23,3 +23,9 @@ func (s *Server) currentHealth(ctx context.Context, raw []byte, rec TunnelRecord
 	}
 	return health
 }
+
+func (s *Server) invalidateHealth(ctx context.Context, node, instance, reason string) {
+	for _, t := range s.affected(ctx, node, instance) {
+		s.DB.Exec(ctx, `UPDATE tunnels SET health=jsonb_build_object('process','[]'::jsonb,'transport',jsonb_build_object('status','unknown','code',$1::text),'application',jsonb_build_object('status','unknown')) WHERE id=$2`, reason, t["id"])
+	}
+}

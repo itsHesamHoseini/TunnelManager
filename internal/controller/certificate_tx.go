@@ -155,6 +155,11 @@ func (s *Server) deployCertificateTransaction(ctx context.Context, id string, q 
 	if e = tx.Commit(ctx); e != nil {
 		return
 	}
+	for _, target := range targets {
+		for _, instance := range target.Instances {
+			s.invalidateHealth(ctx, target.Node, instance, "certificate_rotation_requires_new_check")
+		}
+	}
 	s.Audit(ctx, "certificate-deployment", req.Name, "all-selected-nodes-confirmed")
 }
 

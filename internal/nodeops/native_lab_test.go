@@ -213,6 +213,14 @@ func TestNativeBothEngines(t *testing.T) {
 			time.Sleep(65 * time.Second)
 			require(a, "instance.action", map[string]any{"ID": instance[a], "Action": "restart", "ExpectedHash": hashes[a], "Confirm": true})
 			checkHTTP(spec.Routes[0].User.Port)
+			logs := require(a, "logs.read", map[string]any{"ID": instance[a], "Limit": 200, "Severity": "all"})
+			var logResult struct {
+				Lines []map[string]any `json:"lines"`
+			}
+			json.Unmarshal(logs.Data, &logResult)
+			if len(logResult.Lines) == 0 || bytes.Contains(logs.Data, []byte(spec.Token)) {
+				t.Fatal("actual selected-unit journal unavailable or secret leaked")
+			}
 			raw := run("exec", a, "cat", filepath.Join("/etc/tunnelmanager-agent/instances", instance[a]+".toml"))
 			raw = append(raw, []byte("\n# manual edit\n")...)
 			cmd := exec.CommandContext(ctx, "docker", "exec", "-i", a, "sh", "-c", "cat > /etc/tunnelmanager-agent/instances/"+instance[a]+".toml")
@@ -222,6 +230,11 @@ func TestNativeBothEngines(t *testing.T) {
 			}
 			if v := call(a, "instance.action", map[string]any{"ID": instance[a], "Action": "restart", "ExpectedHash": hashes[a], "Confirm": true}); v.OK || v.Code != "manual_config_drift" {
 				t.Fatal("manual config drift was not blocked")
+			}
+			beforeRelease := string(run("exec", a, "systemctl", "show", "tunnelmanager-instance-"+instance[a]+".service", "--property=MainPID", "--value"))
+			require(a, "recovery.release", map[string]any{"ID": name + "_create", "Kind": "config", "Confirm": true})
+			if beforeRelease != string(run("exec", a, "systemctl", "show", "tunnelmanager-instance-"+instance[a]+".service", "--property=MainPID", "--value")) {
+				t.Fatal("recovery release restarted selected unit")
 			}
 			for _, node := range nodes {
 				unit := "tunnelmanager-instance-" + instance[node] + ".service"
@@ -256,9 +269,7 @@ func TestNativeBothEngines(t *testing.T) {
 			adoptedSpec.Routes = append([]engine.Route{}, spec.Routes...)
 			adoptedSpec.Routes[0].User.Port += 200
 			change(name+"_adopted_edit", adoptedSpec, true)
-			if call(a, "instance.action", map[string]any{"ID": instance[a], "Action": "remove", "ExpectedHash": hashes[a], "Confirm": true}).OK {
-				t.Fatal("original adopted unit removed")
-			}
+			require(a, "instance.action", map[string]any{"ID": instance[a], "Action": "remove", "ExpectedHash": hashes[a], "Confirm": true})
 			t.Log("Actual engine download/checksum, two Linux systemd peers, two shared routes, HTTP data plane, unrelated port conflict, local timeout rollback, intentional stop/start and manual drift passed")
 		})
 	}

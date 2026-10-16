@@ -29,6 +29,7 @@ type Journal struct {
 	Change      Change    `json:"change"`
 	Old         *Instance `json:"old,omitempty"`
 	OldUnit     []byte    `json:"old_unit,omitempty"`
+	NewUnit     []byte    `json:"new_unit,omitempty"`
 	UnitExisted bool      `json:"unit_existed"`
 	UnitPath    string    `json:"unit_path"`
 	Candidate   Instance  `json:"candidate"`
@@ -209,6 +210,9 @@ func (r *Runtime) prepare(ctx context.Context, b []byte) (any, error) {
 		}
 		j.Old = &old
 		v.Unit = old.Unit
+		if old.Name != "" {
+			v.Name = old.Name
+		}
 		v.Adopted = old.Adopted
 		v.Stopped = old.Stopped
 		v.Disabled = old.Disabled
@@ -315,6 +319,10 @@ func (r *Runtime) activate(ctx context.Context, b []byte) (any, error) {
 			args = " "
 		}
 		unit = "[Unit]\nDescription=TunnelManager managed tunnel instance\nAfter=network-online.target\n[Service]\nType=simple\nExecStart=" + j.Candidate.Binary + args + j.Candidate.Path + "\nRestart=no\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nProtectKernelTunables=true\nProtectControlGroups=true\nCapabilityBoundingSet=CAP_NET_BIND_SERVICE\nRestrictAddressFamilies=AF_INET AF_INET6\nMemoryMax=256M\nTasksMax=256\nInaccessiblePaths=-" + r.ConfigDir + "/identity.key -" + r.ConfigDir + "/node.json -/etc/tunnelmanager -/var/lib/tunnelmanager-agent\n[Install]\nWantedBy=multi-user.target\n"
+	}
+	j.NewUnit = []byte(unit)
+	if e = writeJSON(r.file("changes", q.ID+".json"), j); e != nil {
+		return nil, e
 	}
 	if e = config.Atomic(j.UnitPath, []byte(unit), 0644); e != nil {
 		return nil, e
@@ -428,7 +436,7 @@ func (r *Runtime) revert(ctx context.Context, id string, compensate bool) error 
 	if e != nil {
 		return e
 	}
-	if j.Phase == "reverted" || (j.Phase == "confirmed" && !compensate) {
+	if j.Phase == "reverted" || j.Phase == "released" || (j.Phase == "confirmed" && !compensate) {
 		return nil
 	}
 	if j.Phase == "confirmed" {
@@ -443,6 +451,27 @@ func (r *Runtime) revert(ctx context.Context, id string, compensate bool) error 
 	if j.Phase == "prepared" {
 		j.Phase = "reverted"
 		return writeJSON(r.file("changes", id+".json"), j)
+	}
+	if j.Phase == "awaiting_confirmation" || j.Phase == "validated" {
+		if _, _, e := registryRaw(r, j.Candidate.ID); e != nil {
+			return e
+		}
+	}
+	current, err := readRegular(j.Candidate.Path, 65536)
+	if err == nil && engine.Digest(current) != engine.Digest([]byte(j.NewConfig)) && !(j.Old != nil && j.Old.Path == j.Candidate.Path && engine.Digest(current) == j.Old.Hash) {
+		return errors.New("manual_config_drift")
+	}
+	if err != nil && j.Phase != "activating" {
+		return errors.New("manual_config_drift")
+	}
+	unit, unitError := readRegular(j.UnitPath, 65536)
+	if unitError == nil {
+		known := j.UnitExisted && engine.Digest(unit) == engine.Digest(j.OldUnit) || len(j.NewUnit) > 0 && engine.Digest(unit) == engine.Digest(j.NewUnit) || j.Candidate.UnitHash != "" && engine.Digest(unit) == j.Candidate.UnitHash
+		if !known {
+			return errors.New("manual_unit_drift")
+		}
+	} else if j.UnitExisted {
+		return errors.New("manual_unit_drift")
 	}
 	run(ctx, "systemctl", "stop", "--", j.Candidate.Unit)
 	if j.UnitExisted {
@@ -566,6 +595,11 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 	case "reload":
 		_, e = run(ctx, "systemctl", "reload", "--", v.Unit)
 	case "revoke":
+		alias := v
+		alias.Managed = false
+		if e = writeJSON(r.file("unmanaged", v.ID+".json"), alias); e != nil {
+			return nil, e
+		}
 		if e = os.Remove(r.file("instances", v.ID+".json")); e != nil {
 			return nil, e
 		}
@@ -583,6 +617,7 @@ func (r *Runtime) action(ctx context.Context, b []byte) (any, error) {
 			os.Remove(filepath.Join("/etc/systemd/system", v.Unit))
 			os.Remove(v.Path)
 			os.Remove(r.file("instances", v.ID+".json"))
+			os.Remove(r.file("unmanaged", v.ID+".json"))
 			run(ctx, "systemctl", "daemon-reload")
 			return map[string]any{"removed": true}, nil
 		}
@@ -609,7 +644,7 @@ func (r *Runtime) pending(instance, except string) error {
 		}
 		b, e := os.ReadFile(r.file("changes", entry.Name()))
 		var j Journal
-		if e == nil && json.Unmarshal(b, &j) == nil && j.Change.Instance == instance && j.Change.ID != except && j.Phase != "confirmed" && j.Phase != "reverted" {
+		if e == nil && json.Unmarshal(b, &j) == nil && j.Change.Instance == instance && j.Change.ID != except && j.Phase != "confirmed" && j.Phase != "reverted" && j.Phase != "released" {
 			if j.Phase == "prepared" && j.Change.Deadline.Before(time.Now()) {
 				j.Phase = "reverted"
 				if e = writeJSON(r.file("changes", j.Change.ID+".json"), j); e != nil {
@@ -623,7 +658,7 @@ func (r *Runtime) pending(instance, except string) error {
 	entries, _ = os.ReadDir(r.file("certificate-transactions"))
 	for _, entry := range entries {
 		j, e := r.certTransaction(strings.TrimSuffix(entry.Name(), ".json"))
-		if e != nil || j.ID == except || j.Phase == "confirmed" || j.Phase == "reverted" {
+		if e != nil || j.ID == except || j.Phase == "confirmed" || j.Phase == "reverted" || j.Phase == "released" {
 			continue
 		}
 		if j.Phase == "prepared" && j.Deadline.Before(time.Now()) {

@@ -20,6 +20,7 @@ import (
 )
 
 type Discovered struct {
+	Drift    bool            `json:"drift"`
 	Logging  any             `json:"logging,omitempty"`
 	Linked   bool            `json:"linked"`
 	Recovery *RecoveryPolicy `json:"recovery,omitempty"`
@@ -48,6 +49,15 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 	}
 	items := []Discovered{}
 	owned := map[string]Instance{}
+	aliases := map[string]Instance{}
+	aliasEntries, _ := os.ReadDir(r.file("unmanaged"))
+	for _, entry := range aliasEntries {
+		var v Instance
+		b, e := os.ReadFile(r.file("unmanaged", entry.Name()))
+		if e == nil && json.Unmarshal(b, &v) == nil {
+			aliases[v.Unit] = v
+		}
+	}
 	entries, _ := os.ReadDir(r.file("instances"))
 	for _, entry := range entries {
 		var v Instance
@@ -102,6 +112,12 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 			}
 		}
 		d := Discovered{Instance: Instance{ID: instanceID(unit), Name: strings.TrimSuffix(unit, ".service"), Engine: name, Unit: unit, Binary: exe, Path: path}, Active: props["ActiveState"], Enabled: props["UnitFileState"]}
+		if alias, ok := aliases[unit]; ok {
+			d.ID = alias.ID
+			if alias.Name != "" {
+				d.Name = alias.Name
+			}
+		}
 		if definition, e := run(ctx, "systemctl", "cat", "--", unit); e == nil {
 			d.DefinitionHash = engine.Digest(definition)
 		}
@@ -144,7 +160,7 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 				}
 			}
 		}
-		if own, ok := owned[unit]; ok && own.Path == path && own.Binary == exe {
+		if own, ok := owned[unit]; ok {
 			d.ID = own.ID
 			if own.Name != "" {
 				d.Name = own.Name
@@ -153,6 +169,7 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 			d.Adopted = own.Adopted
 			d.Stopped = own.Stopped
 			d.Disabled = own.Disabled
+			d.Drift = own.Path != path || own.Binary != exe || own.Hash != d.Hash || (own.DefinitionHash != "" && own.DefinitionHash != d.DefinitionHash)
 			if j := r.logSession(own.ID); j != nil {
 				d.Logging = map[string]any{"session": strings.TrimPrefix(j.ID, "log_"), "until": j.Deadline}
 			}
@@ -189,14 +206,17 @@ func readRegular(path string, max int64) ([]byte, error) {
 }
 func (r *Runtime) adopt(ctx context.Context, b []byte) (any, error) {
 	var q struct {
-		ID, Hash, Fingerprint, DefinitionHash string
-		Confirm                               bool
+		ID, Name, Hash, Fingerprint, DefinitionHash string
+		Confirm                                     bool
 	}
 	if e := decode(b, &q); e != nil {
 		return nil, e
 	}
 	if !q.Confirm {
 		return nil, errors.New("explicit_adoption_required")
+	}
+	if len(q.Name) > 100 {
+		return nil, errors.New("instance_name_too_long")
 	}
 	data, e := r.Inventory(ctx, nil)
 	if e != nil {
@@ -206,6 +226,9 @@ func (r *Runtime) adopt(ctx context.Context, b []byte) (any, error) {
 		if d.ID != q.ID {
 			continue
 		}
+		if e := r.pending(d.ID, ""); e != nil {
+			return nil, e
+		}
 		if d.Hash != q.Hash || d.Fingerprint != q.Fingerprint || d.DefinitionHash == "" || d.DefinitionHash != q.DefinitionHash {
 			return nil, errors.New("discovery_drift")
 		}
@@ -213,10 +236,27 @@ func (r *Runtime) adopt(ctx context.Context, b []byte) (any, error) {
 			return nil, errors.New("unsupported_instance_requires_verified_binary")
 		}
 		v := d.Instance
+		if d.Managed && !d.Drift {
+			if old, e := r.load(d.ID); e == nil {
+				v = old
+			}
+		}
+		if strings.TrimSpace(q.Name) != "" {
+			v.Name = strings.TrimSpace(q.Name)
+		}
 		v.Managed = true
-		v.Adopted = true
-		v.Stopped = d.Active != "active"
-		v.Disabled = d.Enabled != "enabled"
+		if !d.Managed || d.Drift {
+			v.Adopted = true
+		}
+		if !d.Managed {
+			var alias Instance
+			b, e := os.ReadFile(r.file("unmanaged", d.ID+".json"))
+			if e == nil && json.Unmarshal(b, &alias) == nil && alias.Unit == d.Unit && alias.DefinitionHash == d.DefinitionHash && alias.Path == d.Path && alias.Binary == d.Binary {
+				v.Adopted = alias.Adopted
+			}
+		}
+		v.Stopped = d.Stopped || d.Active != "active"
+		v.Disabled = d.Disabled || d.Enabled != "enabled"
 		if e = r.save(v); e != nil {
 			return nil, e
 		}

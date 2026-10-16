@@ -15,6 +15,8 @@ func TestSharedExpansionPreservesOtherClientRoutes(t *testing.T) {
 	ctx := context.Background()
 	a := sharedSpec("client_a", "one", 24443)
 	b := sharedSpec("client_b", "two", 24444)
+	a.PeerOptions = map[string]map[string]any{"client": {"retry_interval": float64(3)}, "server": {"services": map[string]any{"one": map[string]any{"nodelay": true}}}}
+	b.PeerOptions = map[string]map[string]any{"client": {"retry_interval": float64(7)}, "server": {"services": map[string]any{"two": map[string]any{"nodelay": false}}}}
 	records := []TunnelUpdate{{ID: "a", Name: "A", Revision: 1, Record: TunnelRecord{Spec: a, Instances: map[string]string{"listener": "shared_server", "client_a": "client_a"}, Hashes: map[string]string{"listener": "same_hash", "client_a": "a_hash"}}}, {ID: "b", Name: "B", Revision: 1, Record: TunnelRecord{Spec: b, Instances: map[string]string{"listener": "shared_server", "client_b": "client_b"}, Hashes: map[string]string{"listener": "same_hash", "client_b": "b_hash"}}}}
 	for _, v := range records {
 		cipher, _ := s.sealValue("tunnel:"+v.ID, v.Record)
@@ -41,8 +43,18 @@ func TestSharedExpansionPreservesOtherClientRoutes(t *testing.T) {
 			if e != nil || len(parsed.Routes) != 2 {
 				t.Fatal("shared server config lost a route")
 			}
+			m, _ := engine.Parse(raw)
+			server, _ := m["server"].(map[string]any)
+			services, _ := server["services"].(map[string]any)
+			other, _ := services["two"].(map[string]any)
+			if other["nodelay"] != false {
+				t.Fatal("unrelated server route options lost")
+			}
 		} else if p.Node == "client_b" && p.Spec.Routes[0].ID != "two" {
 			t.Fatal("unrelated backend replaced")
+		}
+		if p.Node == "client_b" && p.Spec.PeerOptions["client"]["retry_interval"] != float64(7) {
+			t.Fatal("another client's retry policy replaced")
 		}
 	}
 	s.DB.Exec(ctx, "UPDATE tunnels SET managed=false WHERE id='b'")

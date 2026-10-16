@@ -125,31 +125,53 @@ func pairedSpec(listener, dialer string, a, b nodeops.Discovered) (engine.Spec, 
 	return spec, nil
 }
 func (s *Server) storeImport(ctx context.Context, name string, spec engine.Spec, a, b nodeops.Discovered, manual bool) (string, error) {
-	rows, e := s.DB.Query(ctx, "SELECT id,cipher FROM tunnels")
+	rows, e := s.DB.Query(ctx, "SELECT id,cipher,revision,managed FROM tunnels")
 	if e != nil {
 		return "", e
 	}
 	existing := ""
+	var existingRevision int64
+	var existingManaged bool
 	for rows.Next() {
 		var id string
 		var cipher []byte
-		rows.Scan(&id, &cipher)
+		var rev int64
+		var managed bool
+		rows.Scan(&id, &cipher, &rev, &managed)
 		var rec TunnelRecord
 		if s.openValue("tunnel:"+id, cipher, &rec) == nil && rec.Instances[spec.Listener] == a.ID && rec.Instances[spec.Dialer] == b.ID {
 			existing = id
+			existingRevision = rev
+			existingManaged = managed
 			break
 		}
 	}
 	rows.Close()
-	if existing != "" {
+	if existing != "" && (!manual || existingManaged) {
+		if manual && existingManaged {
+			return "", errors.New("revoke_management_before_reimport")
+		}
 		return existing, nil
 	}
 	// Stable pair identity prevents a periodic discovery from duplicating imported paths.
 	id := "import_" + engine.Digest([]byte(spec.Listener + ":" + a.ID + ":" + spec.Dialer + ":" + b.ID))[:24]
 	record := TunnelRecord{Spec: spec, Instances: map[string]string{spec.Listener: a.ID, spec.Dialer: b.ID}, Hashes: map[string]string{spec.Listener: a.Hash, spec.Dialer: b.Hash}}
+	if existing != "" {
+		id = existing
+	}
 	cipher, e := s.sealValue("tunnel:"+id, record)
 	if e != nil {
 		return "", e
+	}
+	if existing != "" {
+		tag, e := s.DB.Exec(ctx, "UPDATE tunnels SET name=$1,cipher=$2,revision=revision+1,health='{}',updated=now() WHERE id=$3 AND revision=$4 AND NOT managed", name, cipher, id, existingRevision)
+		if e != nil {
+			return "", e
+		}
+		if tag.RowsAffected() != 1 {
+			return "", errors.New("tunnel_revision_changed")
+		}
+		return id, nil
 	}
 	health, _ := json.Marshal(map[string]any{"process": "unknown", "transport": "untested", "application": "unconfigured", "pairing": map[bool]string{true: "manual", false: "address, transport and authentication evidence"}[manual]})
 	_, e = s.DB.Exec(ctx, "INSERT INTO tunnels(id,name,cipher,health)VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING", id, name, cipher, health)

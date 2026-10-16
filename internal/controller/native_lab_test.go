@@ -33,7 +33,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		t.Skip("isolated CI only")
 	}
 	s, _, _ := testServer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 18*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 23*time.Minute)
 	defer cancel()
 	private, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
@@ -296,6 +296,175 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		t.Fatal("removed clone retained as managed")
 	}
 	t.Log("Real API clone generated independent identities; native version restoration, batch exactly-once actions, disable/start and owned removal passed")
+	// A real pre-existing service with no peer can be managed after an explicit
+	// metadata-only adoption. It is not silently rewritten as a panel-created unit.
+	orphan := original.Spec
+	orphan.Transport = "tcp"
+	orphan.TransportRemote = engine.Endpoint{Host: "127.0.0.1", Port: 65534}
+	orphan.Routes = append([]engine.Route{}, orphan.Routes...)
+	orphan.Routes[0].ID = "unmatched"
+	orphan.Token = "synthetic-unmatched-fixture"
+	orphan.PeerOptions = nil
+	orphanRaw, e := engine.Render(orphan, "client")
+	if e != nil {
+		t.Fatal(e)
+	}
+	writeFixture := func(path, data string) {
+		cmd := exec.CommandContext(ctx, "docker", "exec", "-i", nodes[1], "sh", "-c", "umask 077; cat > "+path)
+		cmd.Stdin = strings.NewReader(data)
+		if out, e := cmd.CombinedOutput(); e != nil {
+			t.Fatalf("native fixture file: %v %s", e, out)
+		}
+	}
+	writeFixture("/etc/tunnelmanager-lab-orphan.toml", orphanRaw)
+	writeFixture("/etc/systemd/system/synthetic-orphan.service", "[Unit]\nDescription=Synthetic unpaired existing engine\n[Service]\nExecStart=/opt/tunnelmanager/engines/rathole/0.5.0/rathole /etc/tunnelmanager-lab-orphan.toml\nRestart=no\n")
+	run("exec", nodes[1], "systemctl", "daemon-reload")
+	run("exec", nodes[1], "systemctl", "start", "synthetic-orphan")
+	beforeOrphan := string(run("exec", nodes[1], "systemctl", "show", "synthetic-orphan", "--property=MainPID", "--value"))
+	nodeAction := func(key, kind string, payload any) string {
+		status, result := request(t, client, srv.URL+"/api/nodes/"+ids[1]+"/actions", "POST", map[string]any{"request_key": key, "kind": kind, "payload": payload, "confirm": true})
+		if status != 200 {
+			t.Fatalf("native node action rejected: %s", kind)
+		}
+		id, _ := result["operation_id"].(string)
+		return id
+	}
+	wait(nodeAction("native_orphan_discover", "inventory", map[string]any{}))
+	var inventoryRaw []byte
+	s.DB.QueryRow(ctx, "SELECT inventory FROM nodes WHERE id=$1", ids[1]).Scan(&inventoryRaw)
+	var discovered struct {
+		Instances []nodeops.Discovered `json:"instances"`
+	}
+	json.Unmarshal(inventoryRaw, &discovered)
+	var found *nodeops.Discovered
+	for i := range discovered.Instances {
+		if discovered.Instances[i].Unit == "synthetic-orphan.service" {
+			found = &discovered.Instances[i]
+			break
+		}
+	}
+	if found == nil || found.Managed {
+		t.Fatal("unpaired existing service missing")
+	}
+	wait(nodeAction("native_orphan_adopt", "instance.adopt", map[string]any{"ID": found.ID, "Name": "Synthetic orphan service"}))
+	if beforeOrphan != string(run("exec", nodes[1], "systemctl", "show", "synthetic-orphan", "--property=MainPID", "--value")) {
+		t.Fatal("adoption restarted unpaired service")
+	}
+	for _, action := range []string{"stop", "start"} {
+		wait(nodeAction("native_orphan_"+action, "instance.action", map[string]any{"ID": found.ID, "Action": action, "ExpectedHash": found.Hash, "Confirm": true}))
+	}
+	protectedRemove := nodeAction("native_orphan_remove_guard", "instance.action", map[string]any{"ID": found.ID, "Action": "remove", "ExpectedHash": found.Hash, "Confirm": true})
+	for attempt := 0; attempt < 30; attempt++ {
+		var phase, code string
+		s.DB.QueryRow(ctx, "SELECT phase,error FROM operations WHERE id=$1", protectedRemove).Scan(&phase, &code)
+		if phase == "failed" {
+			if code != "adopted_instance_preserved_stop_or_revoke_instead" {
+				t.Fatal("wrong original-unit protection result")
+			}
+			break
+		}
+		if phase == "succeeded" || attempt == 29 {
+			t.Fatal("foreign unit removal not protected")
+		}
+		time.Sleep(time.Second)
+	}
+	t.Log("Real unpaired foreign service: signed discovery, explicit named adoption without PID changes, actual stop/start and original-unit removal protection passed")
+	shared := original.Spec
+	shared.Transport = "tcp"
+	shared.Token = "synthetic-native-shared-auth"
+	shared.PeerOptions = nil
+	shared.TransportBind.Port = 28300
+	shared.TransportRemote.Port = 28300
+	shared.Application = nil
+	shared.Routes = []engine.Route{{ID: "shared_one", Name: "Shared first", User: engine.Endpoint{Host: "0.0.0.0", Port: 24843}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 29096}, Protocol: "tcp"}, {ID: "shared_two", Name: "Shared second", User: engine.Endpoint{Host: "0.0.0.0", Port: 24844}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 29096}, Protocol: "tcp"}}
+	writeAt := func(node, path, data string) {
+		cmd := exec.CommandContext(ctx, "docker", "exec", "-i", node, "sh", "-c", "umask 077; cat > "+path)
+		cmd.Stdin = strings.NewReader(data)
+		if e := cmd.Run(); e != nil {
+			t.Fatal("shared fixture write failed")
+		}
+	}
+	for index, unit := range []string{"synthetic-shared-server", "synthetic-shared-first", "synthetic-shared-second"} {
+		spec := shared
+		role := "server"
+		node := nodes[0]
+		if index > 0 {
+			role = "client"
+			node = nodes[1]
+			spec.Routes = shared.Routes[index-1 : index]
+			spec.PeerOptions = map[string]map[string]any{"client": {"retry_interval": float64(index + 1)}}
+		}
+		raw, e := engine.Render(spec, role)
+		if e != nil {
+			t.Fatal(e)
+		}
+		path := "/etc/" + unit + ".toml"
+		writeAt(node, path, raw)
+		writeAt(node, "/etc/systemd/system/"+unit+".service", "[Unit]\nDescription=Synthetic existing shared instance\n[Service]\nExecStart=/opt/tunnelmanager/engines/rathole/0.5.0/rathole "+path+"\nRestart=no\n")
+		run("exec", node, "systemctl", "daemon-reload")
+		run("exec", node, "systemctl", "start", unit)
+	}
+	for index, node := range ids {
+		status, result := request(t, client, srv.URL+"/api/nodes/"+node+"/actions", "POST", map[string]any{"request_key": fmt.Sprintf("native_shared_discover_%d", index), "kind": "inventory", "payload": map[string]any{}})
+		if status != 200 {
+			t.Fatal("shared discovery rejected")
+		}
+		op, _ := result["operation_id"].(string)
+		wait(op)
+	}
+	sharedIDs := []string{}
+	for _, entry := range []struct{ unit, name string }{{"synthetic-shared-first.service", "Synthetic shared first"}, {"synthetic-shared-second.service", "Synthetic shared second"}} {
+		var inventory []byte
+		s.DB.QueryRow(ctx, "SELECT inventory FROM nodes WHERE id=$1", ids[1]).Scan(&inventory)
+		var data struct {
+			Instances []nodeops.Discovered `json:"instances"`
+		}
+		json.Unmarshal(inventory, &data)
+		instance := ""
+		for _, v := range data.Instances {
+			if v.Unit == entry.unit {
+				instance = v.ID
+			}
+		}
+		if instance == "" {
+			t.Fatal("second native client missing")
+		}
+		var serverInventory []byte
+		s.DB.QueryRow(ctx, "SELECT inventory FROM nodes WHERE id=$1", ids[0]).Scan(&serverInventory)
+		json.Unmarshal(serverInventory, &data)
+		serverInstance := ""
+		for _, v := range data.Instances {
+			if v.Unit == "synthetic-shared-server.service" {
+				serverInstance = v.ID
+			}
+		}
+		status, result := request(t, client, srv.URL+"/api/tunnel-imports", "POST", map[string]any{"Name": entry.name, "Listener": ids[0], "Dialer": ids[1], "ServerInstance": serverInstance, "ClientInstance": instance})
+		if status != 200 {
+			t.Fatal("shared manual import rejected")
+		}
+		id, _ := result["tunnel_id"].(string)
+		_, revision, _, _ := s.readTunnel(ctx, id)
+		status, result = request(t, client, srv.URL+"/api/tunnels/"+id+"/adopt", "POST", map[string]any{"RequestKey": "native_adopt_" + instance, "ExpectedRevision": revision, "Confirm": true})
+		if status != 200 {
+			t.Fatal("shared adoption rejected")
+		}
+		op, _ := result["operation_id"].(string)
+		wait(op)
+		sharedIDs = append(sharedIDs, id)
+	}
+	for index, id := range sharedIDs {
+		record, revision, _, e := s.readTunnel(ctx, id)
+		if e != nil {
+			t.Fatal(e)
+		}
+		record.Spec.Routes[0].User.Port = 24845 + index
+		record.Spec.Application = &engine.Probe{Kind: "http", Endpoint: engine.Endpoint{Host: ips[0], Port: 24845 + index}, Path: "/probe", Expected: "synthetic-native-response"}
+		applyPlan(map[string]any{"RequestKey": fmt.Sprintf("native_shared_edit_%d", index), "Tunnel": id, "Name": []string{"Synthetic shared first", "Synthetic shared second"}[index], "Spec": record.Spec, "ExpectedRevision": revision})
+	}
+	for _, port := range []string{"24845", "24846"} {
+		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+port+"/probe',timeout=5).read()")
+	}
+	t.Log("Real shared listener and two independent clients on the same node imported/adopted; both route edits preserved the other route, scoped options and per-instance revision hashes")
 	status, _ = request(t, client, srv.URL+"/api/certificates/native_tls/policy", "PUT", map[string]any{"expected_policy_revision": 0, "auto_deploy": true, "confirm": true})
 	if status != 200 {
 		t.Fatal("explicit automatic deployment policy was not saved")

@@ -226,6 +226,9 @@ func Validate(s Spec) error {
 		if role != "server" && role != "client" {
 			return errors.New("invalid option role")
 		}
+		if len(opts) == 0 {
+			continue
+		}
 		normalized, e := Options(s.Engine, opts)
 		if e != nil {
 			return e
@@ -382,7 +385,23 @@ func Render(s Spec, role string) (string, error) {
 			services[r.ID] = v
 		}
 	}
-	mergeOptions(side, s.PeerOptions[role])
+	// Per-service options on another route must not synthesize a service without
+	// its endpoint. Shared expansion renders those options with their own routes.
+	encoded, _ := json.Marshal(s.PeerOptions[role])
+	opts := map[string]any{}
+	json.Unmarshal(encoded, &opts)
+	if services, ok := opts["services"].(map[string]any); ok {
+		valid := map[string]bool{}
+		for _, route := range s.Routes {
+			valid[route.ID] = true
+		}
+		for id := range services {
+			if !valid[id] {
+				delete(services, id)
+			}
+		}
+	}
+	mergeOptions(side, opts)
 	b, e := toml.Marshal(cfg)
 	return string(b), e
 }

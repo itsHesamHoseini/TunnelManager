@@ -109,6 +109,24 @@ func (r *Runtime) certificateMembers(ctx context.Context, q Certificate, leaf *x
 	entries, _ := os.ReadDir(r.file("instances"))
 	out := []certMember{}
 	dir := filepath.ToSlash(filepath.Join(r.ConfigDir, "certificates", q.ID)) + "/"
+	aliases, _ := os.ReadDir(r.file("unmanaged"))
+	for _, entry := range aliases {
+		var alias Instance
+		b, e := os.ReadFile(r.file("unmanaged", entry.Name()))
+		if e != nil || json.Unmarshal(b, &alias) != nil {
+			continue
+		}
+		if _, e := r.load(alias.ID); e == nil {
+			continue
+		}
+		raw, e := readRegular(alias.Path, 65536)
+		if e != nil {
+			return nil, errors.New("unmanaged_certificate_consumer_requires_review")
+		}
+		if strings.Contains(string(raw), dir) {
+			return nil, errors.New("adopt_all_certificate_consumers_before_rotation")
+		}
+	}
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -401,7 +419,7 @@ func (r *Runtime) pendingCertificate(id, except string) error {
 	entries, _ := os.ReadDir(r.file("certificate-transactions"))
 	for _, entry := range entries {
 		j, e := r.certTransaction(strings.TrimSuffix(entry.Name(), ".json"))
-		if e != nil || j.ID == except || j.Certificate != id || j.Phase == "confirmed" || j.Phase == "reverted" {
+		if e != nil || j.ID == except || j.Certificate != id || j.Phase == "confirmed" || j.Phase == "reverted" || j.Phase == "released" {
 			continue
 		}
 		if j.Phase == "prepared" && j.Deadline.Before(time.Now()) {
@@ -425,7 +443,7 @@ func (r *Runtime) revertCert(parent context.Context, id string, compensate bool)
 	if e != nil {
 		return e
 	}
-	if j.Phase == "reverted" || j.Phase == "confirmed" && !compensate {
+	if j.Phase == "reverted" || j.Phase == "released" || j.Phase == "confirmed" && !compensate {
 		return nil
 	}
 	if j.Phase == "confirmed" {

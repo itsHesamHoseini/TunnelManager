@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS operations(id text PRIMARY KEY,request_key text UNIQU
 CREATE INDEX IF NOT EXISTS operations_pending ON operations(phase,created);
 ALTER TABLE operations ADD COLUMN IF NOT EXISTS request_hash text NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX IF NOT EXISTS operations_one_certificate_change ON operations(target) WHERE kind='certificate' AND phase IN('queued','running','applying','confirming','recovery_pending');
+CREATE UNIQUE INDEX IF NOT EXISTS operations_one_certificate_change_v2 ON operations(target) WHERE kind='certificate' AND phase IN('queued','running','applying','confirming','recovery_pending','release_pending');
+DROP INDEX IF EXISTS operations_one_certificate_change;
 CREATE TABLE IF NOT EXISTS commands(id text PRIMARY KEY,operation_id text REFERENCES operations(id),node_id text REFERENCES nodes(id) ON DELETE CASCADE,stage text NOT NULL,kind text NOT NULL,cipher bytea NOT NULL,state text NOT NULL DEFAULT 'queued',expires timestamptz NOT NULL,lease_until timestamptz,result_cipher bytea,created timestamptz NOT NULL DEFAULT now(),UNIQUE(operation_id,node_id,stage));
 CREATE INDEX IF NOT EXISTS commands_pending ON commands(node_id,state,created);
 CREATE TABLE IF NOT EXISTS port_reservations(plan_id text REFERENCES operations(id) ON DELETE CASCADE,node_id text REFERENCES nodes(id) ON DELETE CASCADE,host text NOT NULL,port integer NOT NULL,protocol text NOT NULL,expires timestamptz NOT NULL,PRIMARY KEY(plan_id,node_id,host,port,protocol));

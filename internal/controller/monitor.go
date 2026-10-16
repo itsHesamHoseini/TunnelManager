@@ -106,6 +106,9 @@ func (s *Server) processTunnelCheck(ctx context.Context, id string, q JobPayload
 		data := run(node, "process", "instance.status", map[string]string{"ID": instance})
 		if active, ok := data["active"].(bool); ok {
 			data["status"] = map[bool]string{true: "passed", false: "failed"}[active]
+			if stopped, _ := data["intentional_stop"].(bool); stopped && !active {
+				data["status"] = "stopped"
+			}
 		}
 		processes = append(processes, data)
 	}

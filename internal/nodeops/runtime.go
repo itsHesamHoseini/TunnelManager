@@ -211,6 +211,8 @@ func (r *Runtime) dispatch(ctx context.Context, kind string, b json.RawMessage) 
 			return nil, e
 		}
 		return nil, r.revert(ctx, q.ID, q.Compensate)
+	case "recovery.release":
+		return r.releaseRecovery(ctx, b)
 	case "instance.action":
 		return r.action(ctx, b)
 	case "instance.config":
@@ -231,6 +233,24 @@ func (r *Runtime) dispatch(ctx context.Context, kind string, b json.RawMessage) 
 		return r.logs(ctx, b)
 	case "logs.verbosity":
 		return r.verbosity(ctx, b)
+	case "logs.release":
+		var q struct {
+			ID, Session string
+			Confirm     bool
+		}
+		if e := decode(b, &q); e != nil {
+			return nil, e
+		}
+		if !q.Confirm || !engine.ID(q.ID) || !engine.ID(q.Session) || len(q.Session) > 59 {
+			return nil, errors.New("explicit_recovery_release_required")
+		}
+		var j logTransaction
+		raw, e := os.ReadFile(r.file("log-transactions", "log_"+q.Session+".json"))
+		if e != nil || json.Unmarshal(raw, &j) != nil || j.Instance.ID != q.ID {
+			return nil, errors.New("logging_session_missing")
+		}
+		payload, _ := json.Marshal(map[string]any{"ID": j.ID, "Kind": "logging", "Confirm": true})
+		return r.releaseRecovery(ctx, payload)
 	case "instance.status":
 		return r.status(ctx, b)
 	case "tools.status":

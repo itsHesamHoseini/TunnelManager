@@ -44,7 +44,7 @@ func (r *Runtime) prune(now time.Time) {
 			if folder == "changes" || folder == "certificate-transactions" || folder == "log-transactions" {
 				var state struct{ Phase string }
 				b, e := os.ReadFile(path)
-				if e != nil || json.Unmarshal(b, &state) != nil || (state.Phase != "confirmed" && state.Phase != "reverted") {
+				if e != nil || json.Unmarshal(b, &state) != nil || (state.Phase != "confirmed" && state.Phase != "reverted" && state.Phase != "released") {
 					continue
 				}
 				if folder == "changes" {

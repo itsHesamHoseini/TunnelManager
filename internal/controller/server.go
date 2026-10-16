@@ -258,6 +258,7 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("GET /api/operations", s.operationList)
 	private.HandleFunc("GET /api/operations/{id}", s.operationDetail)
 	private.HandleFunc("POST /api/operations/{id}/transition", s.planTransition)
+	private.HandleFunc("POST /api/operations/{id}/release", s.recoveryRelease)
 	private.HandleFunc("POST /api/operations/{id}/check", s.pendingPlanCheck)
 	private.HandleFunc("POST /api/nodes/{id}/actions", s.nodeAction)
 	private.HandleFunc("GET /api/nodes/{id}/inventory", s.nodeInventory)

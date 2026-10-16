@@ -424,7 +424,9 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			if q.Hashes == nil {
 				q.Hashes = map[string]string{}
 			}
-			q.Hashes[p.Node] = out.Instance.Hash
+			if q.Instances[p.Node] == p.Instance {
+				q.Hashes[p.Node] = out.Instance.Hash
+			}
 			for i := range q.Updates {
 				if q.Updates[i].Record.Instances[p.Node] == p.Instance {
 					q.Updates[i].Record.Hashes[p.Node] = out.Instance.Hash
@@ -441,21 +443,42 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			s.phase(ctx, id, "awaiting_confirmation", map[string]any{"affected_routes": engine.Public(q.Spec).Routes, "affected_tunnels": publicAffected(q), "deadline": deadline, "process": "intentionally_stopped", "transport": "untested", "application": "untested", "configuration_only": true}, nil)
 			return
 		}
-		check, e := s.command(ctx, id, q.Spec.Dialer, "post-transport", "diagnostic", nodeops.Diagnostic{Kind: "tcp", Endpoint: q.Spec.TransportRemote})
 		var result struct {
 			Status string `json:"status"`
 		}
-		json.Unmarshal(check.Data, &result)
-		if e != nil || result.Status != "passed" {
-			fail(errors.New("post_apply_transport_failed"))
-			return
-		}
-		if p := q.Spec.Application; p != nil {
-			check, e = s.command(ctx, id, q.Spec.Listener, "post-application", "diagnostic", nodeops.Diagnostic{Kind: p.Kind, Endpoint: p.Endpoint, Path: p.Path, Expected: p.Expected})
+		seen := map[string]bool{}
+		for _, part := range parts {
+			if part.Role != "client" {
+				continue
+			}
+			identity := part.Node + ":" + part.Spec.TransportRemote.String()
+			if seen[identity] {
+				continue
+			}
+			seen[identity] = true
+			check, e := s.command(ctx, id, part.Node, "post_transport_"+engine.Digest([]byte(identity))[:12], "diagnostic", nodeops.Diagnostic{Kind: "tcp", Endpoint: part.Spec.TransportRemote})
 			json.Unmarshal(check.Data, &result)
 			if e != nil || result.Status != "passed" {
-				fail(errors.New("post_apply_application_failed"))
+				fail(errors.New("post_apply_transport_failed"))
 				return
+			}
+			if part.Spec.Transport == "tls" || strings.HasPrefix(part.Spec.Transport, "wss") {
+				check, e = s.command(ctx, id, part.Node, "post_tls_"+engine.Digest([]byte(identity))[:12], "diagnostic", nodeops.Diagnostic{Kind: "tls", Endpoint: part.Spec.TransportRemote, CA: part.Spec.Certificate, ServerName: part.Spec.TLSName})
+				json.Unmarshal(check.Data, &result)
+				if e != nil || result.Status != "passed" {
+					fail(errors.New("post_apply_tls_failed"))
+					return
+				}
+			}
+		}
+		for _, update := range q.Updates {
+			if p := update.Record.Spec.Application; p != nil {
+				check, e := s.command(ctx, id, update.Record.Spec.Listener, "post_application_"+engine.Digest([]byte(update.ID))[:12], "diagnostic", nodeops.Diagnostic{Kind: p.Kind, Endpoint: p.Endpoint, Path: p.Path, Expected: p.Expected})
+				json.Unmarshal(check.Data, &result)
+				if e != nil || result.Status != "passed" {
+					fail(errors.New("post_apply_application_failed"))
+					return
+				}
 			}
 		}
 		s.phase(ctx, id, "awaiting_confirmation", map[string]any{"affected_routes": engine.Public(q.Spec).Routes, "affected_tunnels": publicAffected(q), "deadline": deadline, "process": "active", "transport": "passed", "application": map[bool]string{true: "passed", false: "unconfigured"}[q.Spec.Application != nil]}, nil)
@@ -643,6 +666,7 @@ func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayloa
 			return
 		}
 		s.step(ctx, id, q.Action, p.Node, "succeeded", "")
+		s.invalidateHealth(ctx, p.Node, p.Instance, "service_action_requires_new_check")
 	}
 	desired := "running"
 	if q.Action == "stop" || q.Action == "disable" {
@@ -653,10 +677,18 @@ func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayloa
 	}
 	if q.Action == "remove" || q.Action == "revoke" {
 		for _, p := range parts {
+			if q.Action == "revoke" {
+				s.freezeCertificateLinks(ctx, p.Node, p.Instance)
+				continue
+			}
 			s.DB.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", p.Node, p.Instance)
 		}
 		for _, g := range q.Updates {
-			s.DB.Exec(ctx, "DELETE FROM tunnels WHERE id=$1", g.ID)
+			if q.Action == "revoke" {
+				s.DB.Exec(ctx, "UPDATE tunnels SET managed=false,revision=revision+1,health='{}',updated=now() WHERE id=$1", g.ID)
+			} else {
+				s.DB.Exec(ctx, "DELETE FROM tunnels WHERE id=$1", g.ID)
+			}
 		}
 	} else {
 		for _, g := range q.Updates {
@@ -689,6 +721,10 @@ func (s *Server) processAdoption(ctx context.Context, id string, q JobPayload) {
 			s.phase(ctx, id, "failed", nil, errors.New("discovered_instance_missing"))
 			return
 		}
+		if q.Hashes[p.Node] != selected.Hash {
+			s.phase(ctx, id, "failed", nil, errors.New("rediscover_and_import_changed_configuration_before_adoption"))
+			return
+		}
 		v, e := s.command(ctx, id, p.Node, "adopt", "instance.adopt", map[string]any{"ID": selected.ID, "Hash": selected.Hash, "Fingerprint": selected.Fingerprint, "DefinitionHash": selected.DefinitionHash, "Confirm": true})
 		if e != nil {
 			s.phase(ctx, id, "failed", nil, e)
@@ -699,6 +735,7 @@ func (s *Server) processAdoption(ctx context.Context, id string, q JobPayload) {
 		}
 		json.Unmarshal(v.Data, &result)
 		privateConfigs[p.Role] = result.Private
+		q.Hashes[p.Node] = selected.Hash
 	}
 	if e := engine.ImportSecrets(&q.Spec, privateConfigs["server"], privateConfigs["client"]); e != nil {
 		s.phase(ctx, id, "failed", nil, e)

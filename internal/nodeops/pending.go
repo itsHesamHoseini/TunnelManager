@@ -23,7 +23,7 @@ func (r *Runtime) PendingRollback() error {
 			if e != nil || json.Unmarshal(b, &state) != nil {
 				return errors.New("rollback_journal_unreadable")
 			}
-			if state.Phase != "confirmed" && state.Phase != "reverted" {
+			if state.Phase != "confirmed" && state.Phase != "reverted" && state.Phase != "released" {
 				return errors.New("finish_or_revert_pending_changes_before_uninstall")
 			}
 		}

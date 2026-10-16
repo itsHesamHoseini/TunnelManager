@@ -26,7 +26,7 @@ func (r *Runtime) logSession(instance string) *logTransaction {
 	for _, entry := range entries {
 		var j logTransaction
 		b, e := os.ReadFile(r.file("log-transactions", entry.Name()))
-		if e == nil && json.Unmarshal(b, &j) == nil && j.Instance.ID == instance && j.Phase != "reverted" {
+		if e == nil && json.Unmarshal(b, &j) == nil && j.Instance.ID == instance && j.Phase != "reverted" && j.Phase != "released" {
 			return &j
 		}
 	}
@@ -144,7 +144,7 @@ func (r *Runtime) restoreLogging(ctx context.Context, id string) error {
 	if e != nil || json.Unmarshal(b, &j) != nil || j.ID != id {
 		return errors.New("logging_session_missing")
 	}
-	if j.Phase == "reverted" {
+	if j.Phase == "reverted" || j.Phase == "released" {
 		return nil
 	}
 	if j.Phase != "prepared" {

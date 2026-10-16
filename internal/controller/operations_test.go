@@ -89,3 +89,34 @@ func TestPublicResultDoesNotExposeNestedSecrets(t *testing.T) {
 	}
 	_ = time.Second
 }
+
+func TestManualReimportRefreshesOnlyObservationMetadata(t *testing.T) {
+	s, _, _ := testServer(t)
+	ctx := context.Background()
+	spec := sharedSpec("dialer", "one", 24443)
+	spec.PeerOptions = map[string]map[string]any{"server": nil, "client": nil}
+	if e := engine.Validate(spec); e != nil {
+		t.Fatal("empty imported option maps rejected: ", e)
+	}
+	a := nodeops.Discovered{Instance: nodeops.Instance{ID: "server", Hash: "first"}}
+	b := nodeops.Discovered{Instance: nodeops.Instance{ID: "client", Hash: "client_first"}}
+	id, e := s.storeImport(ctx, "Imported", spec, a, b, true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	s.DB.Exec(ctx, "UPDATE tunnels SET managed=true WHERE id=$1", id)
+	a.Hash = "manual_current"
+	spec.Routes[0].User.Port = 24445
+	if _, e = s.storeImport(ctx, "Changed", spec, a, b, true); e == nil {
+		t.Fatal("manual import overwrote managed record")
+	}
+	s.DB.Exec(ctx, "UPDATE tunnels SET managed=false WHERE id=$1", id)
+	refreshed, e := s.storeImport(ctx, "Changed", spec, a, b, true)
+	if e != nil || refreshed != id {
+		t.Fatal("observation identity lost")
+	}
+	record, revision, managed, e := s.readTunnel(ctx, id)
+	if e != nil || revision != 2 || managed || record.Spec.Routes[0].User.Port != 24445 || record.Hashes[spec.Listener] != "manual_current" {
+		t.Fatal("fresh observed config not imported")
+	}
+}
