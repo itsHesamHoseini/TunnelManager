@@ -64,6 +64,15 @@ func (s *Server) tunnelDetail(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, e)
 		return
 	}
+	var name, desired string
+	var health []byte
+	s.DB.QueryRow(r.Context(), "SELECT name,desired,health FROM tunnels WHERE id=$1", r.PathValue("id")).Scan(&name, &desired, &health)
+	configurations := map[string]string{}
+	for _, role := range []string{"server", "client"} {
+		if raw, e := engine.Render(record.Spec, role); e == nil {
+			configurations[role] = engine.Redact(raw)
+		}
+	}
 	rows, e := s.DB.Query(r.Context(), "SELECT revision,at FROM tunnel_versions WHERE tunnel_id=$1 ORDER BY revision DESC LIMIT 50", r.PathValue("id"))
 	versions := []map[string]any{}
 	if e == nil {
@@ -75,7 +84,7 @@ func (s *Server) tunnelDetail(w http.ResponseWriter, r *http.Request) {
 			versions = append(versions, map[string]any{"revision": rev, "at": at})
 		}
 	}
-	write(w, map[string]any{"id": r.PathValue("id"), "revision": revision, "managed": managed, "spec": engine.Public(record.Spec), "instances": record.Instances, "hashes": record.Hashes, "versions": versions})
+	write(w, map[string]any{"id": r.PathValue("id"), "name": name, "desired": desired, "health": json.RawMessage(health), "configurations": configurations, "revision": revision, "managed": managed, "spec": engine.Public(record.Spec), "instances": record.Instances, "hashes": record.Hashes, "versions": versions})
 }
 func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 	var q struct {
@@ -147,13 +156,30 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, errors.New("tunnel_name_required"))
 		return
 	}
+	if q.Spec.Certificate != "" {
+		cert, _, e := s.readCertificate(r.Context(), q.Spec.Certificate)
+		if e != nil {
+			badOperation(w, e)
+			return
+		}
+		if _, e = validateCertificate(cert); e != nil {
+			badOperation(w, e)
+			return
+		}
+		q.Spec.PKCS12Password = cert.PKCS12Password
+	}
 	if instances[q.Spec.Listener] == "" {
 		instances[q.Spec.Listener] = id + "_s"
 	}
 	if instances[q.Spec.Dialer] == "" {
 		instances[q.Spec.Dialer] = id + "_c"
 	}
-	op, e := s.newJob(r.Context(), q.RequestKey, "plan", id, q.Name, JobPayload{RequestHash: requestHash, Spec: q.Spec, Tunnel: id, Name: q.Name, ExpectedRevision: q.ExpectedRevision, Instances: instances, Hashes: hashes})
+	payload := JobPayload{RequestHash: requestHash, Spec: q.Spec, Tunnel: id, Name: q.Name, ExpectedRevision: q.ExpectedRevision, Instances: instances, Hashes: hashes}
+	if e := s.expand(r.Context(), &payload); e != nil {
+		badOperation(w, e)
+		return
+	}
+	op, e := s.newJob(r.Context(), q.RequestKey, "plan", id, q.Name, payload)
 	if e != nil {
 		badOperation(w, e)
 		return
@@ -190,10 +216,14 @@ func (s *Server) changeParts(q JobPayload) []struct{ Node, Role string } {
 	return []struct{ Node, Role string }{{q.Spec.Listener, "server"}, {q.Spec.Dialer, "client"}}
 }
 func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload) {
-	parts := s.changeParts(q)
-	runPart := func(p struct{ Node, Role string }, stage, kind string, payload any) (protocol.Result, error) {
+	parts := q.Parts
+	if len(parts) == 0 {
+		s.phase(ctx, id, "failed", nil, errors.New("expanded_plan_required"))
+		return
+	}
+	runPart := func(p ChangePart, stage, kind string, payload any) (protocol.Result, error) {
 		s.step(ctx, id, stage, p.Node, "running", "")
-		v, e := s.command(ctx, id, p.Node, stage, kind, payload)
+		v, e := s.command(ctx, id, p.Node, stage+"_"+engine.Digest([]byte(p.Instance))[:12], kind, payload)
 		status := "succeeded"
 		code := ""
 		if e != nil {
@@ -206,7 +236,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 	fail := func(e error) {
 		recovery := []map[string]any{}
 		for _, p := range parts {
-			_, re := s.command(ctx, id, p.Node, "rollback", "change.rollback", map[string]any{"ID": id, "Compensate": true})
+			_, re := runPart(p, "rollback", "change.rollback", map[string]any{"ID": changeID(id, p.Instance), "Compensate": true})
 			recovery = append(recovery, map[string]any{"node": p.Node, "restored": re == nil})
 		}
 		s.DB.Exec(ctx, "DELETE FROM port_reservations WHERE plan_id=$1", id)
@@ -217,7 +247,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 		s.phase(ctx, id, "running", nil, nil)
 		previews := map[string]any{}
 		for _, p := range parts {
-			c := nodeops.Change{ID: id, Instance: q.Instances[p.Node], Name: q.Name, Role: p.Role, ExpectedHash: q.Hashes[p.Node], Spec: q.Spec}
+			c := nodeops.Change{ID: changeID(id, p.Instance), Instance: p.Instance, Name: q.Name, Role: p.Role, ExpectedHash: p.Hash, Spec: nodeSpec(p)}
 			v, e := runPart(p, "preflight", "change.preflight", c)
 			if e != nil {
 				s.phase(ctx, id, "failed", nil, e)
@@ -225,7 +255,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			}
 			var out map[string]any
 			json.Unmarshal(v.Data, &out)
-			previews[p.Node] = out
+			previews[p.Node+":"+p.Instance] = out
 			if good, _ := out["valid"].(bool); !good {
 				s.phase(ctx, id, "failed", previews, errors.New("preflight_blocked"))
 				return
@@ -235,7 +265,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			s.phase(ctx, id, "failed", previews, e)
 			return
 		}
-		s.phase(ctx, id, "ready", map[string]any{"previews": previews, "affected_routes": q.Spec.Routes, "reverse_connection": map[string]string{"from": q.Spec.Dialer, "to": q.Spec.Listener}, "notice": "activation restarts the selected shared units; application health is checked separately"}, nil)
+		s.phase(ctx, id, "ready", map[string]any{"previews": previews, "affected_tunnels": publicAffected(q), "affected_routes": engine.Public(q.Spec).Routes, "reverse_connection": map[string]string{"from": q.Spec.Dialer, "to": q.Spec.Listener}, "notice": "activation restarts the selected shared units; application health is checked separately"}, nil)
 	case "applying":
 		if q.ExpectedRevision > 0 {
 			_, revision, _, e := s.readTunnel(ctx, q.Tunnel)
@@ -245,7 +275,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			}
 		}
 		for _, p := range parts {
-			c := nodeops.Change{ID: id, Instance: q.Instances[p.Node], Name: q.Name, Role: p.Role, ExpectedHash: q.Hashes[p.Node], Spec: q.Spec, Deadline: time.Now().Add(5 * time.Minute)}
+			c := nodeops.Change{ID: changeID(id, p.Instance), Instance: p.Instance, Name: q.Name, Role: p.Role, ExpectedHash: p.Hash, Spec: nodeSpec(p), Deadline: time.Now().Add(5 * time.Minute)}
 			if _, e := runPart(p, "prepare", "change.prepare", c); e != nil {
 				fail(e)
 				return
@@ -265,7 +295,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 		}
 		deadline := q.Deadline
 		for _, p := range parts {
-			v, e := runPart(p, "activate", "change.activate", map[string]any{"ID": id, "Deadline": deadline})
+			v, e := runPart(p, "activate", "change.activate", map[string]any{"ID": changeID(id, p.Instance), "Deadline": deadline})
 			if e != nil {
 				fail(e)
 				return
@@ -283,6 +313,11 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 				q.Hashes = map[string]string{}
 			}
 			q.Hashes[p.Node] = out.Instance.Hash
+			for i := range q.Updates {
+				if q.Updates[i].Record.Instances[p.Node] == p.Instance {
+					q.Updates[i].Record.Hashes[p.Node] = out.Instance.Hash
+				}
+			}
 		}
 		cipher, e := s.sealValue("operation:"+id, q)
 		if e != nil {
@@ -290,7 +325,24 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			return
 		}
 		s.DB.Exec(ctx, "UPDATE operations SET cipher=$1 WHERE id=$2", cipher, id)
-		s.phase(ctx, id, "awaiting_confirmation", map[string]any{"affected_routes": q.Spec.Routes, "deadline": deadline, "process": "active", "transport": "not_yet_tested", "application": "not_configured"}, nil)
+		check, e := s.command(ctx, id, q.Spec.Dialer, "post-transport", "diagnostic", nodeops.Diagnostic{Kind: "tcp", Endpoint: q.Spec.TransportRemote})
+		var result struct {
+			Status string `json:"status"`
+		}
+		json.Unmarshal(check.Data, &result)
+		if e != nil || result.Status != "passed" {
+			fail(errors.New("post_apply_transport_failed"))
+			return
+		}
+		if p := q.Spec.Application; p != nil {
+			check, e = s.command(ctx, id, q.Spec.Listener, "post-application", "diagnostic", nodeops.Diagnostic{Kind: p.Kind, Endpoint: p.Endpoint, Path: p.Path, Expected: p.Expected})
+			json.Unmarshal(check.Data, &result)
+			if e != nil || result.Status != "passed" {
+				fail(errors.New("post_apply_application_failed"))
+				return
+			}
+		}
+		s.phase(ctx, id, "awaiting_confirmation", map[string]any{"affected_routes": engine.Public(q.Spec).Routes, "affected_tunnels": publicAffected(q), "deadline": deadline, "process": "active", "transport": "passed", "application": map[bool]string{true: "passed", false: "unconfigured"}[q.Spec.Application != nil]}, nil)
 	case "confirming":
 		var deadline *time.Time
 		s.DB.QueryRow(ctx, "SELECT deadline FROM operations WHERE id=$1", id).Scan(&deadline)
@@ -299,22 +351,16 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			return
 		}
 		for _, p := range parts {
-			if _, e := runPart(p, "confirm", "change.confirm", map[string]string{"ID": id}); e != nil {
+			if _, e := runPart(p, "confirm", "change.confirm", map[string]string{"ID": changeID(id, p.Instance)}); e != nil {
 				fail(e)
 				return
 			}
 		}
 		for _, p := range parts {
-			if _, e := runPart(p, "commit", "change.confirm", map[string]any{"ID": id, "Commit": true}); e != nil {
+			if _, e := runPart(p, "commit", "change.confirm", map[string]any{"ID": changeID(id, p.Instance), "Commit": true}); e != nil {
 				fail(e)
 				return
 			}
-		}
-		record := TunnelRecord{Spec: q.Spec, Instances: q.Instances, Hashes: q.Hashes}
-		cipher, e := s.sealValue("tunnel:"+q.Tunnel, record)
-		if e != nil {
-			fail(e)
-			return
 		}
 		tx, e := s.DB.Begin(ctx)
 		if e != nil {
@@ -322,29 +368,45 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			return
 		}
 		defer tx.Rollback(ctx)
-		if q.ExpectedRevision == 0 {
-			_, e = tx.Exec(ctx, "INSERT INTO tunnels(id,name,cipher,managed)VALUES($1,$2,$3,true)", q.Tunnel, q.Name, cipher)
-		} else {
-			tag, err := tx.Exec(ctx, "UPDATE tunnels SET name=$1,cipher=$2,revision=revision+1,updated=now() WHERE id=$3 AND revision=$4", q.Name, cipher, q.Tunnel, q.ExpectedRevision)
+		for _, g := range q.Updates {
+			cipher, err := s.sealValue("tunnel:"+g.ID, g.Record)
 			e = err
-			if e == nil && tag.RowsAffected() != 1 {
-				e = errors.New("tunnel_revision_changed")
+			if e != nil {
+				break
+			}
+			if g.Revision == 0 {
+				_, e = tx.Exec(ctx, "INSERT INTO tunnels(id,name,cipher,managed)VALUES($1,$2,$3,true)", g.ID, g.Name, cipher)
+			} else {
+				tag, err := tx.Exec(ctx, "UPDATE tunnels SET name=$1,cipher=$2,revision=revision+1,updated=now() WHERE id=$3 AND revision=$4", g.Name, cipher, g.ID, g.Revision)
+				e = err
+				if e == nil && tag.RowsAffected() != 1 {
+					e = errors.New("tunnel_revision_changed")
+				}
+			}
+			if e != nil {
+				break
+			}
+			_, e = tx.Exec(ctx, "INSERT INTO tunnel_versions(tunnel_id,revision,cipher)VALUES($1,$2,$3)", g.ID, g.Revision+1, cipher)
+			if e != nil {
+				break
 			}
 		}
-		if e == nil {
-			_, e = tx.Exec(ctx, "INSERT INTO tunnel_versions(tunnel_id,revision,cipher)VALUES($1,$2,$3)", q.Tunnel, q.ExpectedRevision+1, cipher)
-		}
+
 		if e == nil {
 			_, e = tx.Exec(ctx, "DELETE FROM port_reservations WHERE plan_id=$1", id)
 		}
+		if e == nil {
+			result, _ := json.Marshal(map[string]any{"tunnel_id": q.Tunnel, "revision": q.ExpectedRevision + 1})
+			_, e = tx.Exec(ctx, "UPDATE operations SET phase='succeeded',result=$1,updated=now() WHERE id=$2", result, id)
+		}
 		if e != nil || tx.Commit(ctx) != nil {
-			s.phase(ctx, id, "failed", nil, errors.New("confirmation_database_commit_requires_reconciliation"))
+			fail(errors.New("confirmation_database_commit_requires_reconciliation"))
 			return
 		}
 		s.phase(ctx, id, "succeeded", map[string]any{"tunnel_id": q.Tunnel, "revision": q.ExpectedRevision + 1}, nil)
 	case "reverting":
 		for _, p := range parts {
-			if _, e := runPart(p, "rollback", "change.rollback", map[string]string{"ID": id}); e != nil {
+			if _, e := runPart(p, "rollback", "change.rollback", map[string]string{"ID": changeID(id, p.Instance)}); e != nil {
 				s.phase(ctx, id, "failed", nil, e)
 				return
 			}
@@ -410,7 +472,7 @@ func (s *Server) tunnelAction(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, e)
 		return
 	}
-	write(w, map[string]any{"operation_id": id, "affected_routes": record.Spec.Routes})
+	write(w, map[string]any{"operation_id": id, "affected_routes": engine.Public(record.Spec).Routes})
 }
 func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayload) {
 	s.phase(ctx, id, "running", nil, nil)
@@ -418,7 +480,7 @@ func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayloa
 		s.step(ctx, id, q.Action, p.Node, "running", "")
 		_, e := s.command(ctx, id, p.Node, "action", "instance.action", map[string]any{"ID": q.Instances[p.Node], "Action": q.Action, "ExpectedHash": q.Hashes[p.Node], "Confirm": true})
 		if e != nil {
-			s.phase(ctx, id, "failed", map[string]any{"partial": true, "affected_routes": q.Spec.Routes}, e)
+			s.phase(ctx, id, "failed", map[string]any{"partial": true, "affected_routes": engine.Public(q.Spec).Routes}, e)
 			return
 		}
 		s.step(ctx, id, q.Action, p.Node, "succeeded", "")
@@ -432,7 +494,7 @@ func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayloa
 	} else {
 		s.DB.Exec(ctx, "UPDATE tunnels SET desired=$1,updated=now() WHERE id=$2", desired, q.Tunnel)
 	}
-	s.phase(ctx, id, "succeeded", map[string]any{"affected_routes": q.Spec.Routes}, nil)
+	s.phase(ctx, id, "succeeded", map[string]any{"affected_routes": engine.Public(q.Spec).Routes}, nil)
 }
 func (s *Server) processAdoption(ctx context.Context, id string, q JobPayload) {
 	s.phase(ctx, id, "running", nil, nil)
@@ -458,7 +520,7 @@ func (s *Server) processAdoption(ctx context.Context, id string, q JobPayload) {
 			s.phase(ctx, id, "failed", nil, errors.New("discovered_instance_missing"))
 			return
 		}
-		v, e := s.command(ctx, id, p.Node, "adopt", "instance.adopt", map[string]any{"ID": selected.ID, "Hash": selected.Hash, "Fingerprint": selected.Fingerprint, "Confirm": true})
+		v, e := s.command(ctx, id, p.Node, "adopt", "instance.adopt", map[string]any{"ID": selected.ID, "Hash": selected.Hash, "Fingerprint": selected.Fingerprint, "DefinitionHash": selected.DefinitionHash, "Confirm": true})
 		if e != nil {
 			s.phase(ctx, id, "failed", nil, e)
 			return

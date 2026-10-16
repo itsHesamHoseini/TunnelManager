@@ -34,22 +34,23 @@ func New(c config.Config) *Runtime {
 }
 
 type Instance struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Engine   string   `json:"engine"`
-	Version  string   `json:"version"`
-	Role     string   `json:"role"`
-	Unit     string   `json:"unit"`
-	Path     string   `json:"path"`
-	Binary   string   `json:"binary"`
-	Hash     string   `json:"hash"`
-	Managed  bool     `json:"managed"`
-	Adopted  bool     `json:"adopted"`
-	Stopped  bool     `json:"stopped"`
-	Disabled bool     `json:"disabled"`
-	Routes   []string `json:"routes"`
-	UnitPath string   `json:"unit_path,omitempty"`
-	UnitHash string   `json:"unit_hash,omitempty"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Engine         string   `json:"engine"`
+	Version        string   `json:"version"`
+	Role           string   `json:"role"`
+	Unit           string   `json:"unit"`
+	Path           string   `json:"path"`
+	Binary         string   `json:"binary"`
+	Hash           string   `json:"hash"`
+	Managed        bool     `json:"managed"`
+	Adopted        bool     `json:"adopted"`
+	Stopped        bool     `json:"stopped"`
+	Disabled       bool     `json:"disabled"`
+	Routes         []string `json:"routes"`
+	UnitPath       string   `json:"unit_path,omitempty"`
+	UnitHash       string   `json:"unit_hash,omitempty"`
+	DefinitionHash string   `json:"definition_hash,omitempty"`
 }
 type Receipt struct {
 	Hash    string           `json:"hash"`
@@ -215,7 +216,7 @@ func (r *Runtime) dispatch(ctx context.Context, kind string, b json.RawMessage) 
 		if e := decode(b, &q); e != nil {
 			return nil, e
 		}
-		v, e := r.load(q.ID)
+		v, e := r.resolve(ctx, q.ID)
 		if e != nil {
 			return nil, e
 		}
@@ -226,6 +227,10 @@ func (r *Runtime) dispatch(ctx context.Context, kind string, b json.RawMessage) 
 		return map[string]any{"configuration": engine.Redact(string(raw)), "hash": engine.Digest(raw), "drift": v.Hash != engine.Digest(raw)}, nil
 	case "logs.read":
 		return r.logs(ctx, b)
+	case "instance.status":
+		return r.status(ctx, b)
+	case "tools.status":
+		return r.tools(ctx, b)
 	case "diagnostic":
 		return r.diagnostic(ctx, b)
 	case "certificate.deploy":

@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -24,8 +25,10 @@ import (
 var secretLog = regexp.MustCompile(`(?i)(token|password|secret|authorization|private_key|uuid)\s*[:=]\s*[^\s,;]+`)
 var credentialsURL = regexp.MustCompile(`(?i)(vless|vmess|trojan|ss|https?)://[^\s]+`)
 var uuidRE = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+var pemLog = regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(-----END [A-Z ]*PRIVATE KEY-----|$)`)
 
 func redactLog(s string) string {
+	s = pemLog.ReplaceAllString(s, "[redacted private material]")
 	s = secretLog.ReplaceAllString(s, "$1="+engine.Mask)
 	s = credentialsURL.ReplaceAllString(s, "[redacted URI]")
 	return uuidRE.ReplaceAllString(s, engine.Mask)
@@ -38,7 +41,7 @@ func (r *Runtime) logs(ctx context.Context, b []byte) (any, error) {
 	if e := decode(b, &q); e != nil {
 		return nil, e
 	}
-	v, e := r.load(q.ID)
+	v, e := r.resolve(ctx, q.ID)
 	if e != nil {
 		return nil, e
 	}
@@ -58,6 +61,10 @@ func (r *Runtime) logs(ctx context.Context, b []byte) (any, error) {
 		return nil, e
 	}
 	lines := []map[string]any{}
+	var secrets []string
+	if raw, e := readRegular(v.Path, 65536); e == nil {
+		secrets = rawSecrets(string(raw))
+	}
 	scan := bufio.NewScanner(bytes.NewReader(out))
 	scan.Buffer(make([]byte, 4096), 65536)
 	for scan.Scan() {
@@ -70,6 +77,9 @@ func (r *Runtime) logs(ctx context.Context, b []byte) (any, error) {
 			message = message[:4000]
 		}
 		message = redactLog(message)
+		for _, secret := range secrets {
+			message = strings.ReplaceAll(message, secret, engine.Mask)
+		}
 		if q.Search != "" && !strings.Contains(strings.ToLower(message), strings.ToLower(q.Search)) {
 			continue
 		}
@@ -110,7 +120,7 @@ func (r *Runtime) diagnostic(ctx context.Context, b []byte) (any, error) {
 	if e := decode(b, &q); e != nil {
 		return nil, e
 	}
-	if q.Endpoint.Host == "" || len(q.Endpoint.Host) > 253 || strings.ContainsAny(q.Endpoint.Host, "/\\\r\n\x00 ") || q.Endpoint.Port < 1 || q.Endpoint.Port > 65535 {
+	if !engine.ValidHost(q.Endpoint.Host) || q.Endpoint.Port < 1 || q.Endpoint.Port > 65535 {
 		return nil, errors.New("invalid_diagnostic_target")
 	}
 	if ip := net.ParseIP(q.Endpoint.Host); ip != nil && (ip.IsMulticast() || ip.IsUnspecified() || ip.IsLinkLocalUnicast()) {
@@ -147,7 +157,7 @@ func (r *Runtime) diagnostic(ctx context.Context, b []byte) (any, error) {
 			if !engine.ID(q.CA) {
 				return nil, errors.New("invalid_certificate_reference")
 			}
-			pem, e := os.ReadFile(engine.CertPath(q.CA, "cert.pem"))
+			pem, e := os.ReadFile(filepath.Join(r.ConfigDir, "certificates", q.CA, "cert.pem"))
 			if e != nil {
 				return nil, errors.New("trusted_certificate_missing")
 			}
@@ -178,6 +188,7 @@ func (r *Runtime) diagnostic(ctx context.Context, b []byte) (any, error) {
 		var res *http.Response
 		res, err = client.Do(req)
 		if err == nil {
+			defer client.CloseIdleConnections()
 			body, e := io.ReadAll(io.LimitReader(res.Body, 4097))
 			res.Body.Close()
 			out["http_status"] = res.StatusCode

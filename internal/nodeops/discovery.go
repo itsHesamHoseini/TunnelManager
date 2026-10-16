@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
 )
@@ -98,6 +99,9 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 			}
 		}
 		d := Discovered{Instance: Instance{ID: instanceID(unit), Name: strings.TrimSuffix(unit, ".service"), Engine: name, Unit: unit, Binary: exe, Path: path}, Active: props["ActiveState"], Enabled: props["UnitFileState"]}
+		if definition, e := run(ctx, "systemctl", "cat", "--", unit); e == nil {
+			d.DefinitionHash = engine.Digest(definition)
+		}
 		if !filepath.IsAbs(path) || !strings.HasSuffix(path, ".toml") {
 			d.Reason = "config_path_not_resolved"
 			items = append(items, d)
@@ -172,8 +176,8 @@ func readRegular(path string, max int64) ([]byte, error) {
 }
 func (r *Runtime) adopt(ctx context.Context, b []byte) (any, error) {
 	var q struct {
-		ID, Hash, Fingerprint string
-		Confirm               bool
+		ID, Hash, Fingerprint, DefinitionHash string
+		Confirm                               bool
 	}
 	if e := decode(b, &q); e != nil {
 		return nil, e
@@ -189,7 +193,7 @@ func (r *Runtime) adopt(ctx context.Context, b []byte) (any, error) {
 		if d.ID != q.ID {
 			continue
 		}
-		if d.Hash != q.Hash || d.Fingerprint != q.Fingerprint {
+		if d.Hash != q.Hash || d.Fingerprint != q.Fingerprint || d.DefinitionHash == "" || d.DefinitionHash != q.DefinitionHash {
 			return nil, errors.New("discovery_drift")
 		}
 		if d.Version == "" || d.Reason != "" {
@@ -226,6 +230,14 @@ func registryRaw(r *Runtime, id string) (Instance, string, error) {
 	if v.UnitPath != "" {
 		unit, e := readRegular(v.UnitPath, 65536)
 		if e != nil || engine.Digest(unit) != v.UnitHash {
+			return v, "", errors.New("manual_unit_drift")
+		}
+	}
+	if v.DefinitionHash != "" {
+		ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+		defer done()
+		definition, e := run(ctx, "systemctl", "cat", "--", v.Unit)
+		if e != nil || engine.Digest(definition) != v.DefinitionHash {
 			return v, "", errors.New("manual_unit_drift")
 		}
 	}

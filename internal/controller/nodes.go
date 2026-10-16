@@ -236,6 +236,9 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 	if json.Unmarshal(b, &auth) != nil {
 		return
 	}
+	if auth.Protocol < 0 || auth.Protocol > 2 {
+		return
+	}
 	var pub []byte
 	var approved bool
 	e = s.DB.QueryRow(ctx, "SELECT pubkey,approved FROM nodes WHERE id=$1", auth.NodeID).Scan(&pub, &approved)
@@ -259,6 +262,7 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 	s.DB.Exec(r.Context(), "UPDATE nodes SET reconnects=reconnects+1,protocol=$2 WHERE id=$1", auth.NodeID, max(1, auth.Protocol))
 	s.Audit(r.Context(), "node-connect", auth.NodeID, "authenticated")
 	last := time.Time{}
+	lastFrame := time.Time{}
 	for {
 		readCtx, stop := context.WithTimeout(r.Context(), 60*time.Second)
 		_, b, e = c.Read(readCtx)
@@ -266,6 +270,11 @@ func (s *Server) agentConnection(w http.ResponseWriter, r *http.Request) {
 		if e != nil {
 			return
 		}
+		if time.Since(lastFrame) < 500*time.Millisecond {
+			c.Close(websocket.StatusPolicyViolation, "frame rate exceeded")
+			return
+		}
+		lastFrame = time.Now()
 		if auth.Protocol < 2 && time.Since(last) < 10*time.Second {
 			c.Close(websocket.StatusPolicyViolation, "telemetry rate exceeded")
 			return

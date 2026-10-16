@@ -115,6 +115,9 @@ func (s *Server) command(ctx context.Context, op, node, stage, kind string, payl
 }
 
 type JobPayload struct {
+	Parts            []ChangePart      `json:"parts,omitempty"`
+	Updates          []TunnelUpdate    `json:"updates,omitempty"`
+	Certificate      string            `json:"certificate,omitempty"`
 	RequestHash      string            `json:"request_hash,omitempty"`
 	Deadline         time.Time         `json:"deadline,omitempty"`
 	Node             string            `json:"node,omitempty"`
@@ -164,6 +167,9 @@ func (s *Server) phase(ctx context.Context, id, phase string, result any, err er
 		code = short(err.Error(), 200)
 	}
 	b, _ := json.Marshal(result)
+	if result != nil {
+		b, _ = json.Marshal(publicData(b))
+	}
 	if result == nil {
 		b = []byte("{}")
 	}
@@ -255,6 +261,10 @@ func (s *Server) processJob(parent context.Context, id string) {
 		s.processAdoption(ctx, id, q)
 	case "tunnel-action":
 		s.processTunnelAction(ctx, id, q)
+	case "tunnel-check":
+		s.processTunnelCheck(ctx, id, q)
+	case "certificate":
+		s.processCertificate(ctx, id, q)
 	default:
 		s.phase(ctx, id, "failed", nil, errors.New("unsupported_operation_kind"))
 	}
@@ -298,6 +308,29 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 		json.Unmarshal(payload, &q)
 		s.DB.Exec(ctx, "INSERT INTO checks(node_id,target,kind,data)VALUES($1,$2,$3,$4)", node, q.Endpoint.String(), q.Kind, result.Data)
 	}
+	if kind == "instance.action" || kind == "recovery.policy" {
+		s.DB.Exec(ctx, "UPDATE nodes SET inventory_at=NULL WHERE id=$1", node)
+	}
+	if kind == "recovery.policy" {
+		var policy struct {
+			ID string `json:"id"`
+		}
+		json.Unmarshal(payload, &policy)
+		if policy.ID != "" {
+			s.DB.Exec(ctx, "INSERT INTO recovery_rules(node_id,instance_id,policy)VALUES($1,$2,$3)ON CONFLICT(node_id,instance_id)DO UPDATE SET policy=EXCLUDED.policy", node, policy.ID, result.Data)
+		}
+	}
+	if kind == "instance.action" {
+		var action struct{ ID, Action string }
+		json.Unmarshal(payload, &action)
+		desired := "running"
+		if action.Action == "stop" || action.Action == "disable" {
+			desired = action.Action
+		}
+		for _, t := range s.affected(ctx, node, action.ID) {
+			s.DB.Exec(ctx, "UPDATE tunnels SET desired=$1 WHERE id=$2", desired, t["id"])
+		}
+	}
 }
 func (s *Server) operationList(w http.ResponseWriter, r *http.Request) {
 	rows, e := s.DB.Query(r.Context(), "SELECT id,kind,target,name,phase,error,created,updated,deadline FROM operations ORDER BY created DESC LIMIT 100")
@@ -337,12 +370,12 @@ func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &q) {
 		return
 	}
-	allowed := map[string]bool{"inventory": true, "engine.install": true, "instance.config": true, "logs.read": true, "diagnostic": true, "recovery.policy": true}
+	allowed := map[string]bool{"inventory": true, "engine.install": true, "instance.config": true, "instance.status": true, "tools.status": true, "instance.action": true, "logs.read": true, "diagnostic": true, "recovery.policy": true}
 	if !allowed[q.Kind] {
 		fail(w, 400, "typed_action_required", "Select an available action.", "یکی از عملیات مجاز را انتخاب کنید.")
 		return
 	}
-	if (q.Kind == "engine.install" || q.Kind == "recovery.policy") && !q.Confirm {
+	if (q.Kind == "engine.install" || q.Kind == "recovery.policy" || q.Kind == "instance.action") && !q.Confirm {
 		fail(w, 400, "confirmation_required", "Review and confirm this change.", "اثر تغییر را بررسی و تأیید کنید.")
 		return
 	}

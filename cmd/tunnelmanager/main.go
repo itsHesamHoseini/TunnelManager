@@ -177,6 +177,7 @@ func run(args []string) error {
 		go s.TelegramLoop(ctx)
 		go s.Maintenance(ctx)
 		go s.Operations(ctx)
+		go s.Monitor(ctx)
 		srv := http.Server{Addr: ":8080", Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 * 1024}
 		go func() {
 			<-ctx.Done()

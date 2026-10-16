@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS certificates(id text PRIMARY KEY,name text NOT NULL,d
 CREATE TABLE IF NOT EXISTS certificate_links(certificate_id text REFERENCES certificates(id) ON DELETE CASCADE,node_id text REFERENCES nodes(id) ON DELETE CASCADE,instance_id text NOT NULL,trust_only boolean NOT NULL,hash text NOT NULL DEFAULT '',PRIMARY KEY(certificate_id,node_id,instance_id));
 CREATE TABLE IF NOT EXISTS alerts(id bigserial PRIMARY KEY,rule text NOT NULL,target text NOT NULL,severity text NOT NULL,code text NOT NULL,active boolean NOT NULL DEFAULT true,created timestamptz NOT NULL DEFAULT now(),updated timestamptz NOT NULL DEFAULT now(),notified timestamptz,acknowledged boolean NOT NULL DEFAULT false);
 CREATE UNIQUE INDEX IF NOT EXISTS alerts_active ON alerts(rule,target) WHERE active;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS suppressed_until timestamptz;
 CREATE TABLE IF NOT EXISTS checks(id bigserial PRIMARY KEY,node_id text REFERENCES nodes(id) ON DELETE CASCADE,target text NOT NULL,kind text NOT NULL,at timestamptz NOT NULL DEFAULT now(),data jsonb NOT NULL);
 CREATE INDEX IF NOT EXISTS checks_target ON checks(target,at DESC);
 CREATE TABLE IF NOT EXISTS recovery_rules(node_id text REFERENCES nodes(id) ON DELETE CASCADE,instance_id text,policy jsonb NOT NULL,PRIMARY KEY(node_id,instance_id));

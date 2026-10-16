@@ -15,6 +15,7 @@ import (
 type RecoveryPolicy struct {
 	ID               string     `json:"id"`
 	Enabled          bool       `json:"enabled"`
+	RestartFailed    bool       `json:"restart_failed"`
 	CPU              float64    `json:"cpu"`
 	RAM              uint64     `json:"ram"`
 	SustainedSeconds int        `json:"sustained_seconds"`
@@ -25,6 +26,7 @@ type RecoveryPolicy struct {
 	Day              string     `json:"day"`
 	Count            int        `json:"count"`
 	Reason           string     `json:"reason"`
+	Observed         *time.Time `json:"observed,omitempty"`
 }
 
 func (r *Runtime) recoveryPolicy(ctx context.Context, b []byte) (any, error) {
@@ -35,7 +37,7 @@ func (r *Runtime) recoveryPolicy(ctx context.Context, b []byte) (any, error) {
 	if _, e := r.load(q.ID); e != nil {
 		return nil, e
 	}
-	if q.CPU < 0 || q.CPU > 6400 || q.SustainedSeconds < 60 || q.SustainedSeconds > 3600 || q.CooldownSeconds < 120 || q.DailyLimit < 1 || q.DailyLimit > 10 || q.CPU == 0 && q.RAM == 0 {
+	if q.CPU < 0 || q.CPU > 6400 || q.SustainedSeconds < 60 || q.SustainedSeconds > 3600 || q.CooldownSeconds < 120 || q.CooldownSeconds > 86400 || q.DailyLimit < 1 || q.DailyLimit > 10 || (q.CPU == 0 && q.RAM == 0 && !q.RestartFailed) {
 		return nil, errors.New("invalid_recovery_thresholds")
 	}
 	if old, e := os.ReadFile(r.file("recovery", q.ID+".json")); e == nil {
@@ -53,7 +55,9 @@ func (r *Runtime) recoveryPolicy(ctx context.Context, b []byte) (any, error) {
 	return q, nil
 }
 func (r *Runtime) Observe(ctx context.Context, data protocol.Telemetry) {
-	r.mu.Lock()
+	if !r.mu.TryLock() {
+		return
+	}
 	defer r.mu.Unlock()
 	unlock, e := mutationLock(ctx, r.file("mutation.lock"))
 	if e != nil {
@@ -62,6 +66,9 @@ func (r *Runtime) Observe(ctx context.Context, data protocol.Telemetry) {
 	defer unlock()
 	entries, _ := os.ReadDir(r.file("recovery"))
 	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return
+		}
 		if entry.IsDir() {
 			continue
 		}
@@ -72,7 +79,9 @@ func (r *Runtime) Observe(ctx context.Context, data protocol.Telemetry) {
 			continue
 		}
 		v, e := r.load(p.ID)
-		if e != nil || v.Stopped || v.Disabled {
+		if e != nil || v.Stopped || r.pending(p.ID, "") != nil {
+			p.Since = nil
+			writeJSON(path, p)
 			continue
 		}
 		pidData, e := run(ctx, "systemctl", "show", v.Unit, "--property=MainPID", "--value")
@@ -88,11 +97,21 @@ func (r *Runtime) Observe(ctx context.Context, data protocol.Telemetry) {
 				break
 			}
 		}
-		if process == nil {
+		failed := p.RestartFailed && isState(ctx, "is-failed", v.Unit, "failed")
+		if process == nil && !failed {
+			p.Since = nil
+			writeJSON(path, p)
 			continue
 		}
 		now := time.Now()
-		high := (p.CPU > 0 && process.CPU != nil && *process.CPU >= p.CPU) || (p.RAM > 0 && process.RAM >= p.RAM)
+		if p.Observed == nil || now.Sub(*p.Observed) > 75*time.Second {
+			p.Since = nil
+		}
+		p.Observed = &now
+		high := failed
+		if process != nil {
+			high = high || (p.CPU > 0 && process.CPU != nil && *process.CPU >= p.CPU) || (p.RAM > 0 && process.RAM >= p.RAM)
+		}
 		if !high {
 			p.Since = nil
 		} else if p.Since == nil {
@@ -110,6 +129,9 @@ func (r *Runtime) Observe(ctx context.Context, data protocol.Telemetry) {
 					p.Last = &now
 					p.Since = nil
 					p.Reason = "sustained_process_resource_threshold"
+					if failed {
+						p.Reason = "sustained_failed_unit"
+					}
 					writeJSON(r.file("events", now.UTC().Format("20060102T150405.000000000")+".json"), map[string]any{"at": now, "instance": p.ID, "action": "recovery-restart", "reason": p.Reason, "daily_count": p.Count})
 				}
 			}

@@ -6,11 +6,35 @@ jobs:
   engines:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: tunnelmanager_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:synthetic-ci-only@localhost:5432/tunnelmanager_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: {go-version-file: go.mod}
+      - uses: actions/setup-node@v4
+        with: {node-version: 24}
+      - run: npm ci --prefix web
+      - run: npm run build --prefix web
+      - run: npx playwright install chromium --with-deps
+        working-directory: web
       - run: docker build -t tunnelmanager-native-lab -f scripts/native-lab.Dockerfile .
       - run: go test -tags nativelab -timeout 25m -v ./internal/nodeops
         env:
           TUNNELMANAGER_NATIVE_LAB: '1'
+      - run: go test -tags nativelab -run TestNativeControllerBrowserWorkflow -timeout 20m -v ./internal/controller
+        env:
+          TUNNELMANAGER_NATIVE_LAB: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-browser-evidence
+          path: docs/evidence/*native*.png

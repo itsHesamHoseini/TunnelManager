@@ -54,7 +54,7 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 	if e := engine.Validate(q.Spec); e != nil {
 		return nil, e
 	}
-	raw, e := engine.Render(q.Spec, q.Role)
+	raw, e := r.render(q.Spec, q.Role)
 	if e != nil {
 		return nil, e
 	}
@@ -134,11 +134,16 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 		}
 	}
 	if q.Spec.Certificate != "" {
-		if _, e := os.Stat(engine.CertPath(q.Spec.Certificate, "cert.pem")); e != nil {
+		if _, e := os.Stat(filepath.Join(r.ConfigDir, "certificates", q.Spec.Certificate, "cert.pem")); e != nil {
 			issues = append(issues, map[string]any{"code": "certificate_not_deployed"})
 		}
 	}
-	return map[string]any{"valid": len(issues) == 0, "issues": issues, "configuration": engine.Redact(raw), "scope": "local bind and selected backend checks; external firewall reachability requires peer diagnostics"}, nil
+	current := ""
+	if old != nil {
+		b, _ := os.ReadFile(old.Path)
+		current = engine.Redact(string(b))
+	}
+	return map[string]any{"valid": len(issues) == 0, "issues": issues, "current": current, "configuration": engine.Redact(raw), "scope": "local bind and selected backend checks; external firewall reachability requires peer diagnostics"}, nil
 }
 func (r *Runtime) prepare(ctx context.Context, b []byte) (any, error) {
 	var q Change
@@ -162,7 +167,7 @@ func (r *Runtime) prepare(ctx context.Context, b []byte) (any, error) {
 	if _, e := os.Stat(path); e == nil {
 		return nil, errors.New("change_already_prepared")
 	}
-	raw, e := engine.Render(q.Spec, q.Role)
+	raw, e := r.render(q.Spec, q.Role)
 	if e != nil {
 		return nil, e
 	}
@@ -201,6 +206,13 @@ func (r *Runtime) prepare(ctx context.Context, b []byte) (any, error) {
 		return nil, e
 	}
 	return map[string]any{"prepared": true, "instance": q.Instance}, nil
+}
+func (r *Runtime) render(spec engine.Spec, role string) (string, error) {
+	raw, e := engine.Render(spec, role)
+	if e != nil {
+		return "", e
+	}
+	return strings.ReplaceAll(raw, "/etc/tunnelmanager-agent/certificates/", filepath.ToSlash(filepath.Join(r.ConfigDir, "certificates"))+"/"), nil
 }
 func isState(ctx context.Context, action, unit, expected string) bool {
 	b, e := run(ctx, "systemctl", action, "--", unit)
@@ -267,7 +279,7 @@ func (r *Runtime) activate(ctx context.Context, b []byte) (any, error) {
 		if j.Candidate.Engine == "rathole" {
 			args = " "
 		}
-		unit = "[Unit]\nDescription=TunnelManager managed tunnel instance\nAfter=network-online.target\n[Service]\nType=simple\nExecStart=" + j.Candidate.Binary + args + j.Candidate.Path + "\nRestart=on-failure\nRestartSec=5\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nProtectKernelTunables=true\nProtectControlGroups=true\nCapabilityBoundingSet=CAP_NET_BIND_SERVICE\nRestrictAddressFamilies=AF_INET AF_INET6\nMemoryMax=256M\nTasksMax=256\nInaccessiblePaths=-" + r.ConfigDir + "/identity.key -" + r.ConfigDir + "/node.json -/etc/tunnelmanager -/var/lib/tunnelmanager-agent\n[Install]\nWantedBy=multi-user.target\n"
+		unit = "[Unit]\nDescription=TunnelManager managed tunnel instance\nAfter=network-online.target\n[Service]\nType=simple\nExecStart=" + j.Candidate.Binary + args + j.Candidate.Path + "\nRestart=no\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nProtectKernelTunables=true\nProtectControlGroups=true\nCapabilityBoundingSet=CAP_NET_BIND_SERVICE\nRestrictAddressFamilies=AF_INET AF_INET6\nMemoryMax=256M\nTasksMax=256\nInaccessiblePaths=-" + r.ConfigDir + "/identity.key -" + r.ConfigDir + "/node.json -/etc/tunnelmanager -/var/lib/tunnelmanager-agent\n[Install]\nWantedBy=multi-user.target\n"
 	}
 	if e = config.Atomic(j.UnitPath, []byte(unit), 0644); e != nil {
 		return nil, e
@@ -288,6 +300,11 @@ func (r *Runtime) activate(ctx context.Context, b []byte) (any, error) {
 	}
 	j.Candidate.UnitPath = j.UnitPath
 	j.Candidate.UnitHash = engine.Digest([]byte(unit))
+	definition, definitionError := run(ctx, "systemctl", "cat", "--", j.Candidate.Unit)
+	if definitionError != nil {
+		return nil, definitionError
+	}
+	j.Candidate.DefinitionHash = engine.Digest(definition)
 	if e = r.save(j.Candidate); e != nil {
 		return nil, e
 	}
@@ -301,7 +318,7 @@ func (r *Runtime) armRollback(ctx context.Context, j Journal) error {
 		return e
 	}
 	base := "tunnelmanager-rollback-" + j.Change.ID
-	service := "[Unit]\nDescription=TunnelManager local change rollback\n[Service]\nType=oneshot\nExecStart=" + exe + " local-rollback --id " + j.Change.ID + " --config-dir " + r.ConfigDir + "\n"
+	service := "[Unit]\nDescription=TunnelManager local change rollback\nStartLimitIntervalSec=900\nStartLimitBurst=3\n[Service]\nType=oneshot\nRestart=on-failure\nRestartSec=10\nTimeoutStartSec=125\nExecStart=" + exe + " local-rollback --id " + j.Change.ID + " --config-dir " + r.ConfigDir + "\n"
 	timer := "[Unit]\nDescription=TunnelManager confirmation deadline\n[Timer]\nOnCalendar=" + j.Change.Deadline.UTC().Format("2006-01-02 15:04:05 UTC") + "\nPersistent=true\nAccuracySec=1s\nUnit=" + base + ".service\n[Install]\nWantedBy=timers.target\n"
 	for name, data := range map[string]string{base + ".service": service, base + ".timer": timer} {
 		if e = config.Atomic(filepath.Join("/etc/systemd/system", name), []byte(data), 0644); e != nil {
@@ -360,6 +377,9 @@ func (r *Runtime) Rollback(ctx context.Context, id string) error {
 		return e
 	}
 	defer unlock()
+	if strings.HasPrefix(id, "cert_") {
+		return r.restoreCertificate(ctx, id)
+	}
 	return r.rollback(ctx, id)
 }
 func (r *Runtime) rollback(ctx context.Context, id string) error {
@@ -377,7 +397,14 @@ func (r *Runtime) revert(ctx context.Context, id string, compensate bool) error 
 		if time.Since(j.Change.Deadline) > 10*time.Minute {
 			return errors.New("compensation_window_expired")
 		}
-		if _, _, e = registryRaw(r, j.Candidate.ID); e != nil {
+		current, _, checkError := registryRaw(r, j.Candidate.ID)
+		if checkError != nil {
+			return checkError
+		}
+		if current.Hash != j.Candidate.Hash {
+			return errors.New("newer_change_blocks_compensation")
+		}
+		if e != nil {
 			return e
 		}
 	}
@@ -405,6 +432,9 @@ func (r *Runtime) revert(ctx context.Context, id string, compensate bool) error 
 		}
 		if e = r.save(*j.Old); e != nil {
 			return e
+		}
+		if j.Old.Path != j.Candidate.Path {
+			os.Remove(j.Candidate.Path)
 		}
 	} else {
 		run(ctx, "systemctl", "disable", "--", j.Candidate.Unit)

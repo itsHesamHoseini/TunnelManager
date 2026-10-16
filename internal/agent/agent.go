@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -104,13 +105,35 @@ func Run(ctx context.Context, c config.Config) error {
 		return e
 	}
 	sampler := NewSampler()
+	ops := nodeops.New(c)
+	var latest protocol.Telemetry
+	var sampleMu sync.RWMutex
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			data := sampler.Collect(ctx)
+			sampleMu.Lock()
+			latest = data
+			sampleMu.Unlock()
+			observationCtx, done := context.WithTimeout(ctx, 8*time.Second)
+			ops.Observe(observationCtx, data)
+			done()
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	sample := func() protocol.Telemetry { sampleMu.RLock(); defer sampleMu.RUnlock(); return latest }
 	backoff := time.Second
 	for {
 		if ctx.Err() != nil {
 			return nil
 		}
 		saveStatus("connecting", time.Time{})
-		e = connection(ctx, c, key, client, sampler)
+		e = connection(ctx, c, key, client, ops, sample)
 		if e != nil {
 			saveStatus("disconnected_or_pending_approval", time.Time{})
 		}
@@ -132,7 +155,7 @@ func Run(ctx context.Context, c config.Config) error {
 		}
 	}
 }
-func connection(ctx context.Context, c config.Config, key ed25519.PrivateKey, client *http.Client, sampler *Sampler) error {
+func connection(ctx context.Context, c config.Config, key ed25519.PrivateKey, client *http.Client, ops *nodeops.Runtime, sample func() protocol.Telemetry) error {
 	u, e := url.Parse(c.Controller)
 	if e != nil || u.Scheme != "https" {
 		return errors.New("HTTPS controller required")
@@ -164,18 +187,17 @@ func connection(ctx context.Context, c config.Config, key ed25519.PrivateKey, cl
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	ops := nodeops.New(c)
 	nextSample := time.Time{}
 	pending := []protocol.Result{}
 	for {
 		frame := protocol.Frame{Type: "poll", Version: 2, Results: pending}
-		if !time.Now().Before(nextSample) {
-			data := sampler.Collect(ctx)
-			ops.Observe(ctx, data)
+		data := sample()
+		if !data.At.IsZero() && data.At.After(nextSample) {
 			frame.Type = "telemetry"
 			frame.Data = &data
-			nextSample = time.Now().Add(30 * time.Second)
+			nextSample = data.At
 		}
+
 		b, e = json.Marshal(frame)
 		if e != nil || len(b) > protocol.MaxFrame {
 			return errors.New("measurement/result exceeds safe protocol frame")

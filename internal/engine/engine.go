@@ -24,7 +24,13 @@ type Endpoint struct {
 	Port int    `json:"port"`
 }
 
-func (e Endpoint) String() string { return net.JoinHostPort(e.Host, strconv.Itoa(e.Port)) }
+func (e Endpoint) String() string {
+	host := e.Host
+	if host == "*" {
+		host = "0.0.0.0"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(e.Port))
+}
 
 type Route struct {
 	ID       string   `json:"id"`
@@ -35,6 +41,7 @@ type Route struct {
 	Token    string   `json:"token,omitempty"`
 }
 type Spec struct {
+	Application        *Probe         `json:"application,omitempty"`
 	Engine             string         `json:"engine"`
 	Version            string         `json:"version"`
 	Transport          string         `json:"transport"`
@@ -53,6 +60,12 @@ type Spec struct {
 	AllowUnverifiedTLS bool           `json:"allow_unverified_tls"`
 	RawServer          string         `json:"raw_server,omitempty"`
 	RawClient          string         `json:"raw_client,omitempty"`
+}
+type Probe struct {
+	Kind     string   `json:"kind"`
+	Endpoint Endpoint `json:"endpoint"`
+	Path     string   `json:"path"`
+	Expected string   `json:"expected"`
 }
 type Binding struct {
 	Host     string `json:"host"`
@@ -101,7 +114,26 @@ func validEndpoint(e Endpoint, bind bool) bool {
 	if bind {
 		return e.Host == "*" || net.ParseIP(e.Host) != nil
 	}
-	return e.Host != ""
+	return ValidHost(e.Host)
+}
+func ValidHost(host string) bool {
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for _, part := range strings.Split(strings.TrimSuffix(host, "."), ".") {
+		if len(part) < 1 || len(part) > 63 || part[0] == '-' || part[len(part)-1] == '-' {
+			return false
+		}
+		for _, c := range part {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 func Validate(s Spec) error {
 	if s.Engine != "backhaul" && s.Engine != "rathole" {
@@ -134,8 +166,29 @@ func Validate(s Spec) error {
 	if (strings.HasPrefix(s.Transport, "wss") || s.Transport == "tls") && !ID(s.Certificate) {
 		return errors.New("select a deployed transport certificate")
 	}
-	if s.Engine == "rathole" && s.Transport == "noise" && (s.NoisePrivate == "" || s.NoisePublic == "") {
+	if s.Engine == "rathole" && s.Transport == "noise" && s.NoisePublic == "" {
 		return errors.New("Noise identity missing")
+	}
+	if s.Transport == "noise" {
+		public, e := base64.StdEncoding.DecodeString(s.NoisePublic)
+		if e != nil || len(public) != 32 {
+			return errors.New("invalid_Noise_public_key")
+		}
+	}
+	if s.Transport == "noise" && s.NoisePrivate != "" {
+		private, e := base64.StdEncoding.DecodeString(s.NoisePrivate)
+		if e != nil || len(private) != 32 {
+			return errors.New("invalid_Noise_private_key")
+		}
+		k, e := ecdh.X25519().NewPrivateKey(private)
+		if e != nil || base64.StdEncoding.EncodeToString(k.PublicKey().Bytes()) != s.NoisePublic {
+			return errors.New("Noise_identity_keys_disagree")
+		}
+	}
+	if p := s.Application; p != nil {
+		if (p.Kind != "http" && p.Kind != "echo") || !validEndpoint(p.Endpoint, false) || len(p.Path) > 500 || len(p.Expected) > 128 || strings.ContainsAny(p.Path, "\r\n") {
+			return errors.New("invalid_application_probe")
+		}
 	}
 	seen := map[string]bool{}
 	bindings := []Binding{}
@@ -229,6 +282,9 @@ func Render(s Spec, role string) (string, error) {
 	}
 	if role != "server" && role != "client" {
 		return "", errors.New("role must be server/client")
+	}
+	if role == "server" && s.Transport == "noise" && s.NoisePrivate == "" {
+		return "", errors.New("Noise_listener_private_key_required")
 	}
 	cfg := map[string]any{}
 	side := map[string]any{}
@@ -358,7 +414,7 @@ func Redact(raw string) string {
 	walk = func(m map[string]any) {
 		for k, v := range m {
 			key := strings.ToLower(k)
-			if strings.Contains(key, "token") || strings.Contains(key, "password") || strings.Contains(key, "private_key") || key == "proxy" {
+			if strings.Contains(key, "token") || strings.Contains(key, "password") || strings.Contains(key, "secret") || strings.Contains(key, "key") || key == "proxy" {
 				m[k] = Mask
 			} else if child, ok := v.(map[string]any); ok {
 				walk(child)
