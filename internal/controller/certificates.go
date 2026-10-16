@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 )
 
@@ -33,6 +32,7 @@ type CertificateRequest struct {
 	ProviderToken  string `json:"provider_token"`
 	Staging        bool   `json:"staging"`
 	AutoRenew      bool   `json:"auto_renew"`
+	AutoDeploy     bool   `json:"auto_deploy"`
 	AcceptTerms    bool   `json:"accept_terms"`
 	PKCS12Password string `json:"pkcs12_password"`
 	AccountKey     string `json:"account_key"`
@@ -103,14 +103,15 @@ func (s *Server) certificateList(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	for i := range items {
-		rows, e := s.DB.Query(r.Context(), "SELECT l.node_id,n.name,l.instance_id,l.trust_only,l.hash FROM certificate_links l JOIN nodes n ON n.id=l.node_id WHERE certificate_id=$1", items[i]["id"])
+		rows, e := s.DB.Query(r.Context(), "SELECT l.node_id,n.name,l.instance_id,l.trust_only,l.hash,l.revision FROM certificate_links l JOIN nodes n ON n.id=l.node_id WHERE certificate_id=$1", items[i]["id"])
 		links := []any{}
 		if e == nil {
 			for rows.Next() {
 				var node, name, instance, hash string
 				var trust bool
-				rows.Scan(&node, &name, &instance, &trust, &hash)
-				links = append(links, map[string]any{"node": node, "name": name, "instance": instance, "trust_only": trust, "hash": hash})
+				var deployedRevision int64
+				rows.Scan(&node, &name, &instance, &trust, &hash, &deployedRevision)
+				links = append(links, map[string]any{"node": node, "name": name, "instance": instance, "trust_only": trust, "hash": hash, "deployed_revision": deployedRevision})
 			}
 			rows.Close()
 		}
@@ -161,6 +162,17 @@ func (s *Server) certificateRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		q.Request.AccountKey = old.AccountKey
 		q.Request.PKCS12Password = old.PKCS12Password
+		if q.Request.Domain != old.Domain {
+			var linked bool
+			s.DB.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM certificate_links WHERE certificate_id=$1 AND instance_id<>'')", q.ID).Scan(&linked)
+			if linked {
+				badOperation(w, errors.New("create_a_separate_certificate_for_a_linked_hostname_change"))
+				return
+			}
+		}
+	}
+	if q.Request.Method != "acme" {
+		q.Request.Staging = false
 	}
 	if q.Request.Method == "upload" {
 		if _, e := validateCertificate(q.Request); e != nil {
@@ -198,6 +210,32 @@ func (s *Server) certificateDeploy(w http.ResponseWriter, r *http.Request) {
 	_, rev, e := s.readCertificate(r.Context(), r.PathValue("id"))
 	if e != nil || rev != q.ExpectedRevision || !q.Confirm || len(q.Deployments) < 1 || len(q.Deployments) > 20 {
 		badOperation(w, errors.New("review_certificate_deployment_targets"))
+		return
+	}
+	selected := map[string]bool{}
+	for _, target := range q.Deployments {
+		if selected[target.Node] {
+			badOperation(w, errors.New("duplicate_certificate_target"))
+			return
+		}
+		selected[target.Node] = true
+	}
+	rows, e := s.DB.Query(r.Context(), "SELECT DISTINCT node_id FROM certificate_links WHERE certificate_id=$1 AND revision<$2", r.PathValue("id"), rev)
+	if e != nil {
+		badOperation(w, e)
+		return
+	}
+	missing := false
+	for rows.Next() {
+		var node string
+		rows.Scan(&node)
+		if !selected[node] {
+			missing = true
+		}
+	}
+	rows.Close()
+	if missing {
+		badOperation(w, errors.New("renewal_requires_all_linked_nodes"))
 		return
 	}
 	b, _ := json.Marshal(q.Deployments)
@@ -253,7 +291,7 @@ func (s *Server) processCertificate(ctx context.Context, id string, q JobPayload
 			fail(e)
 			return
 		}
-		meta, _ := json.Marshal(map[string]any{"auto_renew": req.AutoRenew, "staging": req.Staging, "trust": map[bool]string{true: "self-signed; deploy explicit trust to clients", false: "verify issuer chain at the destination"}[req.Method == "self-signed"]})
+		meta, _ := json.Marshal(map[string]any{"auto_renew": req.AutoRenew, "auto_deploy": req.AutoDeploy, "email": req.Email, "zone": req.Zone, "staging": req.Method == "acme" && req.Staging, "trust": map[bool]string{true: "self-signed; deploy explicit trust to clients", false: "verify issuer chain at the destination"}[req.Method == "self-signed"]})
 		if q.ExpectedRevision == 0 {
 			_, e = s.DB.Exec(ctx, "INSERT INTO certificates(id,name,domain,cipher,not_after,issuer,method,metadata)VALUES($1,$2,$3,$4,$5,$6,$7,$8)", q.Certificate, req.Name, req.Domain, cipher, leaf.NotAfter, leaf.Issuer.String(), req.Method, meta)
 		} else {
@@ -268,47 +306,14 @@ func (s *Server) processCertificate(ctx context.Context, id string, q JobPayload
 			return
 		}
 		s.phase(ctx, id, "succeeded", map[string]any{"certificate_id": q.Certificate, "not_after": leaf.NotAfter, "private_material": "encrypted"}, nil)
+		if req.AutoDeploy {
+			s.queueCertificateDeployment(ctx, q.Certificate, q.ExpectedRevision+1, req.Name)
+		}
 		return
 	}
-	req, rev, e := s.readCertificate(ctx, q.Certificate)
-	if e != nil || rev != q.ExpectedRevision {
-		fail(errors.New("certificate_revision_changed"))
-		return
-	}
-	var targets []CertificateDeployment
-	if json.Unmarshal(q.Payload, &targets) != nil {
-		fail(errors.New("invalid_certificate_targets"))
-		return
-	}
-	for _, target := range targets {
-		var expected string
-		s.DB.QueryRow(ctx, "SELECT hash FROM certificate_links WHERE certificate_id=$1 AND node_id=$2 LIMIT 1", q.Certificate, target.Node).Scan(&expected)
-		payload := nodeops.Certificate{RequestID: id, ID: q.Certificate, Domain: req.Domain, Cert: req.Cert, Key: req.Key, PKCS12Password: req.PKCS12Password, ExpectedHash: expected, Instances: target.Instances, TrustOnly: target.TrustOnly, Confirm: true}
-		if target.TrustOnly {
-			payload.Key = ""
-			payload.PKCS12Password = ""
-		}
-		s.step(ctx, id, "certificate.deploy", target.Node, "running", "")
-		v, e := s.command(ctx, id, target.Node, "deploy", "certificate.deploy", payload)
-		if e != nil {
-			fail(e)
-			return
-		}
-		var result struct {
-			Hash string `json:"hash"`
-		}
-		json.Unmarshal(v.Data, &result)
-		instances := target.Instances
-		if len(instances) == 0 {
-			instances = []string{""}
-		}
-		for _, instance := range instances {
-			s.DB.Exec(ctx, "INSERT INTO certificate_links(certificate_id,node_id,instance_id,trust_only,hash)VALUES($1,$2,$3,$4,$5) ON CONFLICT(certificate_id,node_id,instance_id) DO UPDATE SET hash=EXCLUDED.hash,trust_only=EXCLUDED.trust_only", q.Certificate, target.Node, instance, target.TrustOnly, result.Hash)
-		}
-		s.step(ctx, id, "certificate.deploy", target.Node, "succeeded", "")
-	}
-	s.phase(ctx, id, "succeeded", map[string]any{"certificate_id": q.Certificate, "deployments": targets}, nil)
+	s.deployCertificateTransaction(ctx, id, q)
 }
+
 func (s *Server) scheduleRenewals(ctx context.Context) {
 	rows, e := s.DB.Query(ctx, `SELECT id,revision,cipher FROM certificates c WHERE method='acme' AND not_after<now()+interval '30 days' AND metadata->>'auto_renew'='true' AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.target=c.id AND o.kind='certificate' AND o.created>now()-interval '1 day') LIMIT 2`)
 	if e != nil {

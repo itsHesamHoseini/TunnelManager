@@ -156,8 +156,15 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, errors.New("tunnel_name_required"))
 		return
 	}
+	if q.Spec.Transport != "tls" && !strings.HasPrefix(q.Spec.Transport, "wss") {
+		q.Spec.Certificate = ""
+		q.Spec.CertificateHash = ""
+		q.Spec.CertificateRevision = 0
+		q.Spec.PKCS12Password = ""
+		q.Spec.TLSName = ""
+	}
 	if q.Spec.Certificate != "" {
-		cert, _, e := s.readCertificate(r.Context(), q.Spec.Certificate)
+		cert, certRevision, e := s.readCertificate(r.Context(), q.Spec.Certificate)
 		if e != nil {
 			badOperation(w, e)
 			return
@@ -167,6 +174,16 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		q.Spec.PKCS12Password = cert.PKCS12Password
+		q.Spec.CertificateHash = engine.Digest([]byte(cert.Cert))
+		q.Spec.CertificateRevision = certRevision
+		if q.Spec.TLSName == "" {
+			q.Spec.TLSName = cert.Domain
+		}
+		leaf, _ := validateCertificate(cert)
+		if leaf.VerifyHostname(q.Spec.TLSName) != nil {
+			badOperation(w, errors.New("certificate_peer_hostname_mismatch"))
+			return
+		}
 	}
 	if instances[q.Spec.Listener] == "" {
 		instances[q.Spec.Listener] = id + "_s"
@@ -342,6 +359,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			}
 		}
 		deadline := q.Deadline
+		intentionallyStopped := false
 		for _, p := range parts {
 			v, e := runPart(p, "activate", "change.activate", map[string]any{"ID": changeID(id, p.Instance), "Deadline": deadline})
 			if e != nil {
@@ -353,6 +371,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 				Active   bool             `json:"process_active"`
 			}
 			json.Unmarshal(v.Data, &out)
+			intentionallyStopped = intentionallyStopped || out.Instance.Stopped
 			if !out.Active && !out.Instance.Stopped {
 				fail(errors.New("engine_process_not_active"))
 				return
@@ -373,6 +392,10 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			return
 		}
 		s.DB.Exec(ctx, "UPDATE operations SET cipher=$1 WHERE id=$2", cipher, id)
+		if intentionallyStopped {
+			s.phase(ctx, id, "awaiting_confirmation", map[string]any{"affected_routes": engine.Public(q.Spec).Routes, "affected_tunnels": publicAffected(q), "deadline": deadline, "process": "intentionally_stopped", "transport": "untested", "application": "untested", "configuration_only": true}, nil)
+			return
+		}
 		check, e := s.command(ctx, id, q.Spec.Dialer, "post-transport", "diagnostic", nodeops.Diagnostic{Kind: "tcp", Endpoint: q.Spec.TransportRemote})
 		var result struct {
 			Status string `json:"status"`
@@ -444,11 +467,35 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			_, e = tx.Exec(ctx, "DELETE FROM port_reservations WHERE plan_id=$1", id)
 		}
 		if e == nil {
+			for _, p := range q.Parts {
+				if p.Spec.Certificate == "" || (p.Spec.Engine == "backhaul" && p.Role == "client") {
+					_, e = tx.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", p.Node, p.Instance)
+					if e != nil {
+						break
+					}
+					continue
+				}
+				_, e = tx.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2 AND certificate_id<>$3", p.Node, p.Instance, p.Spec.Certificate)
+				if e != nil {
+					break
+				}
+				_, e = tx.Exec(ctx, "INSERT INTO certificate_links(certificate_id,node_id,instance_id,trust_only,hash,revision)VALUES($1,$2,$3,$4,COALESCE((SELECT hash FROM certificate_links WHERE certificate_id=$1 AND node_id=$2 LIMIT 1),''),$5)ON CONFLICT(certificate_id,node_id,instance_id)DO UPDATE SET trust_only=EXCLUDED.trust_only,revision=EXCLUDED.revision", p.Spec.Certificate, p.Node, p.Instance, p.Role == "client", p.Spec.CertificateRevision)
+				if e != nil {
+					break
+				}
+			}
+		}
+		if e == nil {
 			result, _ := json.Marshal(map[string]any{"tunnel_id": q.Tunnel, "revision": q.ExpectedRevision + 1})
 			_, e = tx.Exec(ctx, "UPDATE operations SET phase='succeeded',result=$1,updated=now() WHERE id=$2", result, id)
 		}
-		if e != nil || tx.Commit(ctx) != nil {
+		if e != nil {
 			fail(errors.New("confirmation_database_commit_requires_reconciliation"))
+			return
+		}
+		// A lost COMMIT acknowledgement is ambiguous. The next durable pass reads
+		// the operation phase; never compensate a transaction that may be committed.
+		if tx.Commit(ctx) != nil {
 			return
 		}
 		s.phase(ctx, id, "succeeded", map[string]any{"tunnel_id": q.Tunnel, "revision": q.ExpectedRevision + 1}, nil)
@@ -538,6 +585,9 @@ func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayloa
 		desired = q.Action
 	}
 	if q.Action == "remove" {
+		for node, instance := range q.Instances {
+			s.DB.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", node, instance)
+		}
 		s.DB.Exec(ctx, "DELETE FROM tunnels WHERE id=$1", q.Tunnel)
 	} else {
 		s.DB.Exec(ctx, "UPDATE tunnels SET desired=$1,updated=now() WHERE id=$2", desired, q.Tunnel)

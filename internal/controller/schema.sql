@@ -24,12 +24,14 @@ CREATE TABLE IF NOT EXISTS tunnel_versions(tunnel_id text REFERENCES tunnels(id)
 CREATE TABLE IF NOT EXISTS operations(id text PRIMARY KEY,request_key text UNIQUE NOT NULL,kind text NOT NULL,target text NOT NULL DEFAULT '',name text NOT NULL,phase text NOT NULL DEFAULT 'queued',cipher bytea NOT NULL,steps jsonb NOT NULL DEFAULT '[]',result jsonb NOT NULL DEFAULT '{}',error text NOT NULL DEFAULT '',deadline timestamptz,created timestamptz NOT NULL DEFAULT now(),updated timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS operations_pending ON operations(phase,created);
 ALTER TABLE operations ADD COLUMN IF NOT EXISTS request_hash text NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX IF NOT EXISTS operations_one_certificate_change ON operations(target) WHERE kind='certificate' AND phase IN('queued','running','applying','confirming','recovery_pending');
 CREATE TABLE IF NOT EXISTS commands(id text PRIMARY KEY,operation_id text REFERENCES operations(id),node_id text REFERENCES nodes(id) ON DELETE CASCADE,stage text NOT NULL,kind text NOT NULL,cipher bytea NOT NULL,state text NOT NULL DEFAULT 'queued',expires timestamptz NOT NULL,lease_until timestamptz,result_cipher bytea,created timestamptz NOT NULL DEFAULT now(),UNIQUE(operation_id,node_id,stage));
 CREATE INDEX IF NOT EXISTS commands_pending ON commands(node_id,state,created);
 CREATE TABLE IF NOT EXISTS port_reservations(plan_id text REFERENCES operations(id) ON DELETE CASCADE,node_id text REFERENCES nodes(id) ON DELETE CASCADE,host text NOT NULL,port integer NOT NULL,protocol text NOT NULL,expires timestamptz NOT NULL,PRIMARY KEY(plan_id,node_id,host,port,protocol));
 CREATE INDEX IF NOT EXISTS port_reservations_lookup ON port_reservations(node_id,port,protocol);
 CREATE TABLE IF NOT EXISTS certificates(id text PRIMARY KEY,name text NOT NULL,domain text NOT NULL,cipher bytea NOT NULL,revision bigint NOT NULL DEFAULT 1,not_after timestamptz NOT NULL,issuer text NOT NULL,method text NOT NULL,metadata jsonb NOT NULL DEFAULT '{}',updated timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS certificate_links(certificate_id text REFERENCES certificates(id) ON DELETE CASCADE,node_id text REFERENCES nodes(id) ON DELETE CASCADE,instance_id text NOT NULL,trust_only boolean NOT NULL,hash text NOT NULL DEFAULT '',PRIMARY KEY(certificate_id,node_id,instance_id));
+ALTER TABLE certificate_links ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS alerts(id bigserial PRIMARY KEY,rule text NOT NULL,target text NOT NULL,severity text NOT NULL,code text NOT NULL,active boolean NOT NULL DEFAULT true,created timestamptz NOT NULL DEFAULT now(),updated timestamptz NOT NULL DEFAULT now(),notified timestamptz,acknowledged boolean NOT NULL DEFAULT false);
 CREATE UNIQUE INDEX IF NOT EXISTS alerts_active ON alerts(rule,target) WHERE active;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS suppressed_until timestamptz;

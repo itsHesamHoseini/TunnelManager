@@ -23,6 +23,7 @@ func (s *Server) Monitor(ctx context.Context) {
 			s.scheduleMonitoring(ctx)
 			s.evaluateAlerts(ctx)
 			s.scheduleRenewals(ctx)
+			s.scheduleCertificateDeployments(ctx)
 		}
 	}
 }

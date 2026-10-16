@@ -48,6 +48,11 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 	if e := engine.NormalizeRaw(&q.Spec); e != nil {
 		return nil, e
 	}
+	if q.Spec.Certificate != "" {
+		if e := r.pendingCertificate(q.Spec.Certificate, q.ID); e != nil {
+			return nil, e
+		}
+	}
 	if !engine.ID(q.ID) || !engine.ID(q.Instance) {
 		return nil, errors.New("invalid_change_identity")
 	}
@@ -145,8 +150,10 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 		}
 	}
 	if q.Spec.Certificate != "" {
-		if _, e := os.Stat(filepath.Join(r.ConfigDir, "certificates", q.Spec.Certificate, "cert.pem")); e != nil {
+		if cert, e := os.ReadFile(filepath.Join(r.ConfigDir, "certificates", q.Spec.Certificate, "cert.pem")); e != nil {
 			issues = append(issues, map[string]any{"code": "certificate_not_deployed"})
+		} else if q.Spec.CertificateHash != "" && engine.Digest(cert) != q.Spec.CertificateHash {
+			issues = append(issues, map[string]any{"code": "selected_certificate_revision_not_deployed"})
 		}
 	}
 	current := ""
@@ -257,6 +264,9 @@ func (r *Runtime) activate(ctx context.Context, b []byte) (any, error) {
 	if j.Phase != "prepared" {
 		return nil, errors.New("change_not_prepared")
 	}
+	if j.Change.Deadline.Before(time.Now()) {
+		return nil, errors.New("preparation_expired_recheck_before_applying")
+	}
 	if !q.Deadline.IsZero() {
 		if !q.Deadline.After(time.Now()) || q.Deadline.After(time.Now().Add(95*time.Second)) {
 			return nil, errors.New("invalid_activation_deadline")
@@ -270,6 +280,14 @@ func (r *Runtime) activate(ctx context.Context, b []byte) (any, error) {
 		if _, _, e = registryRaw(r, j.Old.ID); e != nil {
 			return nil, e
 		}
+	}
+	check, _ := json.Marshal(j.Change)
+	preview, e := r.preflight(ctx, check)
+	if e != nil {
+		return nil, e
+	}
+	if valid, _ := preview.(map[string]any)["valid"].(bool); !valid {
+		return preview, errors.New("preflight_changed_before_activation")
 	}
 	if e = r.armRollback(ctx, j); e != nil {
 		return nil, e
@@ -543,7 +561,31 @@ func (r *Runtime) pending(instance, except string) error {
 		b, e := os.ReadFile(r.file("changes", entry.Name()))
 		var j Journal
 		if e == nil && json.Unmarshal(b, &j) == nil && j.Change.Instance == instance && j.Change.ID != except && j.Phase != "confirmed" && j.Phase != "reverted" {
+			if j.Phase == "prepared" && j.Change.Deadline.Before(time.Now()) {
+				j.Phase = "reverted"
+				if e = writeJSON(r.file("changes", j.Change.ID+".json"), j); e != nil {
+					return e
+				}
+				continue
+			}
 			return errors.New("instance_has_pending_change")
+		}
+	}
+	entries, _ = os.ReadDir(r.file("certificate-transactions"))
+	for _, entry := range entries {
+		j, e := r.certTransaction(strings.TrimSuffix(entry.Name(), ".json"))
+		if e != nil || j.ID == except || j.Phase == "confirmed" || j.Phase == "reverted" {
+			continue
+		}
+		if j.Phase == "prepared" && j.Deadline.Before(time.Now()) {
+			j.Phase = "reverted"
+			writeJSON(r.file("certificate-transactions", j.ID+".json"), j)
+			continue
+		}
+		for _, member := range j.Members {
+			if member.Instance.ID == instance {
+				return errors.New("instance_has_pending_certificate_change")
+			}
 		}
 	}
 	return nil

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"math/big"
 	"net"
@@ -175,7 +176,20 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 			wait(id)
 		}
 	}
+	certificatePayload, _ := json.Marshal(CertificateRequest{Name: "Synthetic transport TLS", Domain: "transport.example.com", Method: "self-signed", Days: 2})
+	certificateJob, e := s.newJob(ctx, "native_certificate_issue", "certificate", "native_tls", "Synthetic TLS", JobPayload{Kind: "issue", Certificate: "native_tls", Payload: certificatePayload})
+	if e != nil {
+		t.Fatal(e)
+	}
+	wait(certificateJob)
+	deployPayload, _ := json.Marshal([]CertificateDeployment{{Node: ids[0], TrustOnly: false}, {Node: ids[1], TrustOnly: true}})
+	deployJob, e := s.newJob(ctx, "native_certificate_deploy", "certificate", "native_tls", "Deploy synthetic TLS", JobPayload{Kind: "deploy", Certificate: "native_tls", ExpectedRevision: 1, Payload: deployPayload})
+	if e != nil {
+		t.Fatal(e)
+	}
+	wait(deployJob)
 	fixture := map[string]any{"url": srv.URL, "recovery": codes[0], "listener": ids[0], "dialer": ids[1], "listener_ip": ips[0], "dialer_ip": ips[1]}
+	fixture["certificate"] = "native_tls"
 	raw, _ := json.Marshal(fixture)
 	fixturePath := filepath.Join(work, "browser.json")
 	os.WriteFile(fixturePath, raw, 0600)
@@ -187,10 +201,125 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		t.Fatalf("native browser workflow failed: %v\n%s", e, out)
 	}
 	t.Log(string(out))
+	// Renew and deploy a new identity to every real TLS consumer. A stopped
+	// consumer must remain stopped throughout coordinated certificate rotation.
+	var tlsTunnel string
+	s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native rathole tls'").Scan(&tlsTunnel)
+	tlsRecord, _, _, e := s.readTunnel(ctx, tlsTunnel)
+	if e != nil {
+		t.Fatal(e)
+	}
+	tlsInstance := tlsRecord.Instances[ids[0]]
+	intent := func(action, suffix string) {
+		payload, _ := json.Marshal(map[string]any{"ID": tlsInstance, "Action": action, "ExpectedHash": tlsRecord.Hashes[ids[0]], "Confirm": true})
+		job, err := s.newJob(ctx, "native_tls_"+suffix, "node", ids[0], "TLS consumer "+action, JobPayload{Node: ids[0], Kind: "instance.action", Payload: payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wait(job)
+	}
+	intent("stop", "stop_for_renewal")
+	certificatePayload, _ = json.Marshal(CertificateRequest{Name: "Synthetic transport TLS", Domain: "transport.example.com", Method: "self-signed", Days: 3, AutoDeploy: true})
+	renewJob, e := s.newJob(ctx, "native_certificate_renew", "certificate", "native_tls", "Renew synthetic TLS", JobPayload{Kind: "issue", Certificate: "native_tls", ExpectedRevision: 1, Payload: certificatePayload})
+	if e != nil {
+		t.Fatal(e)
+	}
+	wait(renewJob)
+	var rotation string
+	for attempt := 0; attempt < 10; attempt++ {
+		s.DB.QueryRow(ctx, "SELECT id FROM operations WHERE target='native_tls' AND kind='certificate' AND id<>$1 AND created>(SELECT created FROM operations WHERE id=$1) ORDER BY created DESC LIMIT 1", renewJob).Scan(&rotation)
+		if rotation != "" {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if rotation == "" {
+		t.Fatal("automatic linked certificate deployment missing")
+	}
+	wait(rotation)
+	active, _ := exec.CommandContext(ctx, "docker", "exec", nodes[0], "systemctl", "is-active", "tunnelmanager-instance-"+tlsInstance+".service").Output()
+	if strings.TrimSpace(string(active)) != "inactive" {
+		t.Fatal("certificate rotation overrode intentional stop")
+	}
+	run("exec", nodes[1], "sh", "-c", "test ! -e /etc/tunnelmanager-agent/certificates/native_tls/key.pem && test ! -e /etc/tunnelmanager-agent/certificates/native_tls/identity.pfx")
+	intent("start", "start_after_renewal")
+	for _, p := range []string{"24463", "24473"} {
+		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+p+"/probe',timeout=5).read()")
+	}
+	t.Log("Real self-signed TLS/WSS issuance, deployment, linked renewal and automatic coordinated rotation passed; stopped consumer and client private-key isolation preserved")
+	// A real per-service RAM policy continues while the control route is blackholed.
+	var tunnelID string
+	if s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native rathole noise'").Scan(&tunnelID) != nil {
+		t.Fatal("native Noise tunnel missing")
+	}
+	record, _, _, e := s.readTunnel(ctx, tunnelID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	instance := record.Instances[ids[0]]
+	unit := "tunnelmanager-instance-" + instance + ".service"
+	before := strings.TrimSpace(string(run("exec", nodes[0], "systemctl", "show", unit, "--property=MainPID", "--value")))
+	backendBefore := strings.TrimSpace(string(run("exec", nodes[0], "systemctl", "show", "lab-backend.service", "--property=MainPID", "--value")))
+	policyPayload, _ := json.Marshal(nodeops.RecoveryPolicy{ID: instance, Enabled: true, RAM: 1, SustainedSeconds: 60, CooldownSeconds: 120, DailyLimit: 1})
+	policyJob, e := s.newJob(ctx, "native_recovery_policy", "node", ids[0], "Native recovery policy", JobPayload{Node: ids[0], Kind: "recovery.policy", Payload: policyPayload})
+	if e != nil {
+		t.Fatal(e)
+	}
+	wait(policyJob)
+	hostFields := strings.Fields(string(run("exec", nodes[0], "getent", "hosts", "controller.example.com")))
+	if len(hostFields) == 0 || net.ParseIP(hostFields[0]) == nil {
+		t.Fatal("lab controller route missing")
+	}
+	hostRoute := hostFields[0] + "/32"
+	run("exec", nodes[0], "ip", "route", "add", "blackhole", hostRoute)
+	policyPath := "/var/lib/tunnelmanager-agent/recovery/" + instance + ".json"
+	restarted := false
+	for attempt := 0; attempt < 26; attempt++ {
+		var policy nodeops.RecoveryPolicy
+		if json.Unmarshal(run("exec", nodes[0], "cat", policyPath), &policy) == nil && policy.Count == 1 {
+			restarted = true
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+	run("exec", nodes[0], "ip", "route", "del", "blackhole", hostRoute)
+	if !restarted {
+		t.Fatal("sustained RAM policy did not recover service during controller disconnection")
+	}
+	after := strings.TrimSpace(string(run("exec", nodes[0], "systemctl", "show", unit, "--property=MainPID", "--value")))
+	if before == after || after == "0" {
+		t.Fatal("selected service was not restarted")
+	}
+	backendAfter := strings.TrimSpace(string(run("exec", nodes[0], "systemctl", "show", "lab-backend.service", "--property=MainPID", "--value")))
+	if backendBefore != backendAfter {
+		t.Fatal("unrelated service restarted")
+	}
+	for attempt := 0; attempt < 90 && !s.isConnected(ids[0]); attempt++ {
+		time.Sleep(time.Second)
+	}
+	if !s.isConnected(ids[0]) {
+		t.Fatal("agent did not securely reconnect")
+	}
+	for _, action := range []string{"stop", "start"} {
+		payload, _ := json.Marshal(map[string]any{"ID": instance, "Action": action, "ExpectedHash": record.Hashes[ids[0]], "Confirm": true})
+		job, e := s.newJob(ctx, "native_intent_"+action, "node", ids[0], "Intentional "+action, JobPayload{Node: ids[0], Kind: "instance.action", Payload: payload})
+		if e != nil {
+			t.Fatal(e)
+		}
+		wait(job)
+		if action == "stop" {
+			time.Sleep(65 * time.Second)
+			active, _ := exec.CommandContext(ctx, "docker", "exec", nodes[0], "systemctl", "is-active", unit).Output()
+			if strings.TrimSpace(string(active)) != "inactive" {
+				t.Fatal("automatic recovery overrode an intentional stop")
+			}
+		}
+	}
+	t.Log("Actual native RAM samples triggered only the selected unit after sustained duration during a controller-route outage; another service PID and an intentional stop were preserved")
 	// Stop both control agents after confirmation. Actual HTTP data plane persists.
 	for _, node := range nodes {
 		run("exec", node, "systemctl", "stop", "tunnelmanager-agent")
 	}
-	run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":24443/probe',timeout=5).read()")
+	run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":24543/probe',timeout=5).read()")
 	t.Log("Real controller/PostgreSQL/browser -> signed outbound TLS agents -> two Linux systemd peers and both engines passed; data plane works with both agents stopped")
 }

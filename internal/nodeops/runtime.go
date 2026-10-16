@@ -87,7 +87,7 @@ func (r *Runtime) Execute(ctx context.Context, c protocol.Command) protocol.Resu
 		if receipt.Result != nil {
 			return *receipt.Result
 		}
-		if receipt.Started {
+		if receipt.Started && c.Kind != "certificate.deploy" {
 			out.Code = "interrupted_action_requires_review"
 			return out
 		}

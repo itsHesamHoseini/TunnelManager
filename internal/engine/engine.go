@@ -41,25 +41,27 @@ type Route struct {
 	Token    string   `json:"token,omitempty"`
 }
 type Spec struct {
-	Application        *Probe         `json:"application,omitempty"`
-	Engine             string         `json:"engine"`
-	Version            string         `json:"version"`
-	Transport          string         `json:"transport"`
-	Listener           string         `json:"listener"`
-	Dialer             string         `json:"dialer"`
-	TransportBind      Endpoint       `json:"transport_bind"`
-	TransportRemote    Endpoint       `json:"transport_remote"`
-	Routes             []Route        `json:"routes"`
-	Token              string         `json:"token,omitempty"`
-	NoisePrivate       string         `json:"noise_private,omitempty"`
-	NoisePublic        string         `json:"noise_public,omitempty"`
-	Certificate        string         `json:"certificate,omitempty"`
-	TLSName            string         `json:"tls_name,omitempty"`
-	PKCS12Password     string         `json:"pkcs12_password,omitempty"`
-	Advanced           map[string]any `json:"advanced,omitempty"`
-	AllowUnverifiedTLS bool           `json:"allow_unverified_tls"`
-	RawServer          string         `json:"raw_server,omitempty"`
-	RawClient          string         `json:"raw_client,omitempty"`
+	Application         *Probe         `json:"application,omitempty"`
+	Engine              string         `json:"engine"`
+	Version             string         `json:"version"`
+	Transport           string         `json:"transport"`
+	Listener            string         `json:"listener"`
+	Dialer              string         `json:"dialer"`
+	TransportBind       Endpoint       `json:"transport_bind"`
+	TransportRemote     Endpoint       `json:"transport_remote"`
+	Routes              []Route        `json:"routes"`
+	Token               string         `json:"token,omitempty"`
+	NoisePrivate        string         `json:"noise_private,omitempty"`
+	NoisePublic         string         `json:"noise_public,omitempty"`
+	Certificate         string         `json:"certificate,omitempty"`
+	CertificateHash     string         `json:"certificate_hash,omitempty"`
+	CertificateRevision int64          `json:"certificate_revision,omitempty"`
+	TLSName             string         `json:"tls_name,omitempty"`
+	PKCS12Password      string         `json:"pkcs12_password,omitempty"`
+	Advanced            map[string]any `json:"advanced,omitempty"`
+	AllowUnverifiedTLS  bool           `json:"allow_unverified_tls"`
+	RawServer           string         `json:"raw_server,omitempty"`
+	RawClient           string         `json:"raw_client,omitempty"`
 }
 type Probe struct {
 	Kind     string   `json:"kind"`

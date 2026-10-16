@@ -13,6 +13,7 @@ import (
 	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
 	"github.com/itsHesamHoseini/TunnelManager/internal/protocol"
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (s *Server) sealValue(purpose string, v any) ([]byte, error) {
@@ -175,6 +176,10 @@ func (s *Server) newJob(ctx context.Context, key, kind, target, name string, pay
 	}
 	e = s.DB.QueryRow(ctx, "INSERT INTO operations(id,request_key,kind,target,name,cipher,request_hash,phase)VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(request_key) DO UPDATE SET request_key=EXCLUDED.request_key WHERE operations.request_hash=EXCLUDED.request_hash RETURNING id", id, key, kind, target, name, cipher, payload.RequestHash, initial).Scan(&existing)
 	if e != nil {
+		var dbError *pgconn.PgError
+		if errors.As(e, &dbError) && dbError.ConstraintName == "operations_one_certificate_change" {
+			return "", errors.New("certificate_operation_in_progress")
+		}
 		return "", errors.New("request_key_reused_with_different_input")
 	}
 	if e == nil {
@@ -350,6 +355,9 @@ func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, paylo
 	if kind == "instance.action" {
 		var action struct{ ID, Action string }
 		json.Unmarshal(payload, &action)
+		if action.Action == "remove" {
+			s.DB.Exec(ctx, "DELETE FROM certificate_links WHERE node_id=$1 AND instance_id=$2", node, action.ID)
+		}
 		desired := "running"
 		if action.Action == "stop" || action.Action == "disable" {
 			desired = action.Action
