@@ -1,5 +1,7 @@
 # TunnelManager
-Self-hosted Backhaul/Rathole operations across Linux servers. Go + PostgreSQL + React/TypeScript; Persian RTL/English, light/dark themes. Native agents initiate verified outbound TLS connections. Tunnels continue without the controller.
+
+Current branch: Backhaul-only owner correction, not yet released or qualified for deployment. The linked 0.7.0 release and earlier CI describe the historical product, not this revision. See docs/REVISION-2.md. No production update is authorized.
+Self-hosted Backhaul operations across Linux servers. Go + PostgreSQL + React/TypeScript; Persian RTL/English, light/dark themes. Native agents initiate verified outbound TLS connections. Tunnels continue without the controller.
 
 [فارسی](README.fa.md) · [Operations](docs/OPERATIONS.md) · [Acceptance evidence](docs/REQUIREMENTS.md) · [Progress](docs/PROGRESS.md)
 
@@ -32,7 +34,7 @@ Build machine: Node 24, Go 1.27.3. Target: static binary and systemd; controller
 ## Security and limits
 Password + mandatory TOTP/recovery, hashed sessions, origin checks, edge/application limits, encrypted durable jobs/secrets and a master key outside PostgreSQL. Agents accept typed bounded actions only; no shell/web terminal. This outbound-agent architecture does not use or modify SSH.
 
-Unsupported versions, mappings and identity/proxy semantics remain visible/read-only with a reason. Backhaul 0.7.2 WSS encrypts but does not verify peer certificate identity: explicit acknowledgement is required. Independent panel TLS probes are stricter and do not change engine behavior. Rathole Noise uses a selected peer key; TLS uses explicit certificate trust.
+Unsupported versions, mappings and identity/proxy semantics remain visible/read-only with a reason. Backhaul 0.7.2 WSS encrypts but does not verify peer certificate identity: explicit acknowledgement is required. Independent panel TLS probes are stricter and do not change engine behavior. retired engine (removed by owner) Noise uses a selected peer key; TLS uses explicit certificate trust.
 
 Counters describe the observed host interface, not per-tunnel usage or complete billing. Missing observations are not fabricated. VLESS application health stays unconfigured without a matching application check; TCP success is insufficient. No application users/inbounds/subscriptions are managed. Live CA/DNS/Telegram provider delivery is untested without owner accounts.
 
@@ -50,4 +52,4 @@ Set TEST_DATABASE_URL to isolated PostgreSQL for integration tests; TUNNELMANAGE
 ## Architecture and credits
 One Go executable embeds UI and installer. PostgreSQL holds authority/history/jobs; bounded workers and native agents avoid a separate queue/collector. CSS tokens and small React components preserve the calm visual system without a component/chart framework. The terminal wizard supports masked inputs, Persian/English and NO_COLOR without a TUI dependency.
 
-[Backhaul](https://github.com/Musixal/Backhaul), [Rathole](https://github.com/rathole-org/rathole) and [Vazirmatn](https://github.com/rastikerdar/vazirmatn) are independent projects. [Licenses and pinned artifact trust](docs/THIRD-PARTY.md). Project: MIT; independent engine licenses are unchanged.
+[Backhaul](https://github.com/Musixal/Backhaul) and [Vazirmatn](https://github.com/rastikerdar/vazirmatn) are independent projects. [Licenses and pinned artifact trust](docs/THIRD-PARTY.md). Project: MIT; the independent engine license is unchanged.

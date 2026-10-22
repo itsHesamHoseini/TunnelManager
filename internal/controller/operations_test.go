@@ -71,13 +71,13 @@ func TestPortReservationsSerializeConflictingPlans(t *testing.T) {
 	}
 }
 func TestPairingPreservesDirectionAndSharedRoutes(t *testing.T) {
-	a := nodeops.Discovered{Instance: nodeops.Instance{Engine: "rathole", Version: "0.5.0", Role: "server"}, Parsed: engine.Parsed{Transport: "noise", Bind: "0.0.0.0:28100", Routes: []engine.Route{{ID: "one", User: engine.Endpoint{Host: "0.0.0.0", Port: 443}, Protocol: "tcp"}, {ID: "other", User: engine.Endpoint{Host: "0.0.0.0", Port: 8443}, Protocol: "tcp"}}}}
-	b := nodeops.Discovered{Instance: nodeops.Instance{Engine: "rathole", Role: "client"}, Parsed: engine.Parsed{Transport: "noise", Remote: "listener.example.com:28100", Routes: []engine.Route{{ID: "one", Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}}}}
+	a := nodeops.Discovered{Instance: nodeops.Instance{Engine: "backhaul", Version: "0.7.2", Role: "server"}, Parsed: engine.Parsed{Transport: "tcp", Bind: "0.0.0.0:28100", Routes: []engine.Route{{ID: "one", User: engine.Endpoint{Host: "0.0.0.0", Port: 443}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}, {ID: "other", User: engine.Endpoint{Host: "0.0.0.0", Port: 8443}, Protocol: "tcp"}}}}
+	b := nodeops.Discovered{Instance: nodeops.Instance{Engine: "backhaul", Role: "client"}, Parsed: engine.Parsed{Transport: "tcp", Remote: "listener.example.com:28100", Routes: []engine.Route{{ID: "one", Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}}}}
 	spec, e := pairedSpec("iran", "foreign", a, b)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(spec.Routes) != 1 || spec.Listener != "iran" || spec.Dialer != "foreign" || spec.Routes[0].Backend.Port != 2096 {
+	if len(spec.Routes) != 2 || spec.Listener != "iran" || spec.Dialer != "foreign" || spec.Routes[0].Backend.Port != 2096 {
 		t.Fatal("pairing swapped user or control direction")
 	}
 }

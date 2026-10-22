@@ -58,7 +58,7 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
-func TestNativeBothEngines(t *testing.T) {
+func TestNativeBackhaul(t *testing.T) {
 	if os.Getenv("CI") != "true" || os.Getenv("TUNNELMANAGER_NATIVE_LAB") != "1" {
 		t.Skip("requires isolated CI systemd containers")
 	}
@@ -143,9 +143,9 @@ func TestNativeBothEngines(t *testing.T) {
 		}
 		t.Fatal("actual tunneled HTTP response unavailable")
 	}
-	for index, name := range []string{"backhaul", "rathole"} {
+	for index, name := range []string{"backhaul"} {
 		t.Run(name, func(t *testing.T) {
-			version := map[string]string{"backhaul": "0.7.2", "rathole": "0.5.0"}[name]
+			version := "0.7.2"
 			for _, node := range nodes {
 				require(node, "engine.install", map[string]string{"Engine": name, "Version": version})
 			}

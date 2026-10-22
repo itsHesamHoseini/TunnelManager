@@ -25,8 +25,6 @@ func nodeSpec(p ChangePart) engine.Spec {
 	spec := p.Spec
 	spec.Application = nil
 	if p.Role == "client" {
-		spec.NoisePrivate = ""
-		spec.PKCS12Password = ""
 	}
 	return spec
 }
@@ -95,9 +93,8 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 			next.Application = prior.Application
 			next.TransportRemote.Host = prior.TransportRemote.Host
 			next.PeerOptions = sharedPeerOptions(prior, q.Spec)
-			if q.Spec.Engine == "rathole" {
-				next.Routes = prior.Routes
-			}
+			next.Routes = propagateSharedMappings(prior.Routes, old.Spec.Routes, q.Spec.Routes)
+
 			group[i].Record.Spec = next
 		}
 	}
@@ -158,6 +155,36 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 	})
 	q.Updates = group
 	return nil
+}
+
+// Backhaul's listener owns the mapping table. Preserve mappings outside the
+// selected record, while propagating explicit edits/removals by stable route ID.
+func propagateSharedMappings(prior, old, proposed []engine.Route) []engine.Route {
+	was := map[string]bool{}
+	next := map[string]engine.Route{}
+	seen := map[string]bool{}
+	for _, r := range old {
+		was[r.ID] = true
+	}
+	for _, r := range proposed {
+		next[r.ID] = r
+	}
+	out := []engine.Route{}
+	for _, r := range prior {
+		if replacement, ok := next[r.ID]; ok {
+			r = replacement
+		} else if was[r.ID] {
+			continue
+		}
+		out = append(out, r)
+		seen[r.ID] = true
+	}
+	for _, r := range proposed {
+		if !seen[r.ID] {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func sharedPeerOptions(prior, requested engine.Spec) map[string]map[string]any {

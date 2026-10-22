@@ -120,7 +120,7 @@ func run(args []string) error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		s, e := controller.New(ctx, controller.Config{Address: ":8080", Origin: cfg.Origin(), DatabaseURL: db, Key: key, TrustProxy: true, Static: ui.Handler(), Profile: cfg.Profile, Language: cfg.Language, PolicyDirectory: "/policy"})
+		s, e := controller.New(ctx, controller.Config{Address: ":8080", Origin: cfg.Origin(), DatabaseURL: db, Key: key, TrustProxy: true, Static: ui.Handler(), Profile: cfg.Profile, Language: cfg.Language, PolicyDirectory: "/policy", MigrationBackupDir: "/migration-backups"})
 		if e != nil {
 			return fmt.Errorf("controller startup failed (check database and key)")
 		}

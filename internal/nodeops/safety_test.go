@@ -31,7 +31,7 @@ func TestDriftAndBoundedLogRedaction(t *testing.T) {
 	r := &Runtime{StateDir: t.TempDir()}
 	p := filepath.Join(t.TempDir(), "config.toml")
 	os.WriteFile(p, []byte("old"), 0600)
-	v := Instance{ID: "instance1", Path: p, Managed: true, Hash: engine.Digest([]byte("old"))}
+	v := Instance{ID: "instance1", Path: p, Managed: true, Engine: "backhaul", Hash: engine.Digest([]byte("old"))}
 	r.save(v)
 	if _, _, e := registryRaw(r, v.ID); e != nil {
 		t.Fatal(e)
@@ -88,7 +88,7 @@ func TestUnconfirmedDriftPreservedAndExplicitReleaseOnlyChangesJournal(t *testin
 	unit := filepath.Join(dir, "unit.service")
 	os.WriteFile(path, []byte("manual"), 0600)
 	os.WriteFile(unit, []byte("new unit"), 0600)
-	v := Instance{ID: "instance1", Managed: true, Path: path, Hash: engine.Digest([]byte("candidate")), UnitPath: unit, UnitHash: engine.Digest([]byte("new unit"))}
+	v := Instance{ID: "instance1", Managed: true, Engine: "backhaul", Path: path, Hash: engine.Digest([]byte("candidate")), UnitPath: unit, UnitHash: engine.Digest([]byte("new unit"))}
 	r.save(v)
 	j := Journal{Change: Change{ID: "change1", Instance: v.ID}, Candidate: v, UnitPath: unit, NewConfig: "candidate", NewUnit: []byte("new unit"), Phase: "awaiting_confirmation"}
 	writeJSON(r.file("changes", "change1.json"), j)

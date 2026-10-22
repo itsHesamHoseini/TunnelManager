@@ -335,7 +335,7 @@ func publicData(raw json.RawMessage) any {
 }
 func (s *Server) consumeNodeResult(ctx context.Context, node, kind string, payload json.RawMessage, result protocol.Result) {
 	if kind == "inventory" {
-		s.DB.Exec(ctx, "UPDATE nodes SET inventory=$1,inventory_at=now() WHERE id=$2", result.Data, node)
+		s.DB.Exec(ctx, "UPDATE nodes SET inventory=$1,inventory_at=now() WHERE id=$2", supportedInventory(result.Data), node)
 		s.reconcileDiscovery(ctx)
 	}
 	if kind == "diagnostic" {
@@ -438,6 +438,24 @@ func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "typed_action_required", "Select an available action.", "یکی از عملیات مجاز را انتخاب کنید.")
 		return
 	}
+	if q.Kind == "engine.install" {
+		var selection struct{ Engine, Version string }
+		if json.Unmarshal(q.Payload, &selection) != nil {
+			badOperation(w, errors.New("invalid_engine_selection"))
+			return
+		}
+		if _, e := engine.ArtifactFor(selection.Engine, selection.Version, "amd64"); e != nil {
+			badOperation(w, errors.New("unsupported_engine_version"))
+			return
+		}
+	}
+	if q.Kind == "instance.action" || q.Kind == "instance.config" || q.Kind == "instance.status" || q.Kind == "logs.read" || q.Kind == "logs.verbosity" || q.Kind == "logs.release" || q.Kind == "recovery.policy" {
+		var input struct{ ID string }
+		if json.Unmarshal(q.Payload, &input) != nil || !s.supportedInstance(r.Context(), r.PathValue("id"), input.ID) {
+			badOperation(w, errors.New("unsupported_or_unobserved_instance"))
+			return
+		}
+	}
 	if (q.Kind == "logs.release" || q.Kind == "instance.adopt" || q.Kind == "logs.verbosity" || q.Kind == "engine.install" || q.Kind == "recovery.policy" || q.Kind == "instance.action") && !q.Confirm {
 		fail(w, 400, "confirmation_required", "Review and confirm this change.", "اثر تغییر را بررسی و تأیید کنید.")
 		return
@@ -460,7 +478,7 @@ func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal(raw, &inventory)
 		var selected *nodeops.Discovered
 		for i := range inventory.Instances {
-			if inventory.Instances[i].ID == input.ID {
+			if inventory.Instances[i].ID == input.ID && inventory.Instances[i].Engine == "backhaul" {
 				selected = &inventory.Instances[i]
 				break
 			}
@@ -486,6 +504,43 @@ func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 	}
 	write(w, map[string]string{"operation_id": id})
 }
+
+// Gate the controller too: a still-running older agent must never be asked to
+// execute retired-engine actions just because its own binary still knows them.
+func (s *Server) supportedInstance(ctx context.Context, node, id string) bool {
+	if !engine.ID(id) {
+		return false
+	}
+	var raw []byte
+	if s.DB.QueryRow(ctx, "SELECT inventory FROM nodes WHERE id=$1", node).Scan(&raw) == nil {
+		var inventory struct {
+			Instances []nodeops.Discovered `json:"instances"`
+		}
+		json.Unmarshal(raw, &inventory)
+		for _, instance := range inventory.Instances {
+			if instance.ID == id && instance.Engine == "backhaul" {
+				return true
+			}
+		}
+	}
+	rows, e := s.DB.Query(ctx, "SELECT id,cipher FROM tunnels")
+	if e != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tunnel string
+		var cipher []byte
+		if rows.Scan(&tunnel, &cipher) != nil {
+			continue
+		}
+		var rec TunnelRecord
+		if s.openValue("tunnel:"+tunnel, cipher, &rec) == nil && rec.Spec.Engine == "backhaul" && rec.Instances[node] == id {
+			return true
+		}
+	}
+	return false
+}
 func (s *Server) engineCatalog(w http.ResponseWriter, r *http.Request) { write(w, engine.Catalog) }
 func (s *Server) nodeInventory(w http.ResponseWriter, r *http.Request) {
 	var inventory []byte
@@ -494,7 +549,25 @@ func (s *Server) nodeInventory(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "node_missing", "Node missing.", "سرور پیدا نشد.")
 		return
 	}
-	write(w, map[string]any{"data": publicData(inventory), "at": at, "fresh": at != nil && time.Since(*at) < 5*time.Minute})
+	write(w, map[string]any{"data": publicData(supportedInventory(inventory)), "at": at, "fresh": at != nil && time.Since(*at) < 5*time.Minute})
+}
+
+func supportedInventory(raw json.RawMessage) json.RawMessage {
+	var value map[string]json.RawMessage
+	if json.Unmarshal(raw, &value) != nil {
+		return json.RawMessage(`{"instances":[]}`)
+	}
+	var all []nodeops.Discovered
+	json.Unmarshal(value["instances"], &all)
+	kept := []nodeops.Discovered{}
+	for _, instance := range all {
+		if instance.Engine == "backhaul" {
+			kept = append(kept, instance)
+		}
+	}
+	value["instances"], _ = json.Marshal(kept)
+	b, _ := json.Marshal(value)
+	return b
 }
 func badOperation(w http.ResponseWriter, e error) {
 	fail(w, 400, "operation_blocked", fmt.Sprint(e), "عملیات انجام نشد؛ جزئیات خطا را بررسی و دوباره تلاش کنید.")

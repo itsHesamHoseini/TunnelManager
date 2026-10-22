@@ -97,23 +97,7 @@ func (r *Runtime) preflight(ctx context.Context, b []byte) (any, error) {
 		if bind.Host == "*" {
 			address = net.JoinHostPort("", fmt.Sprint(bind.Port))
 		}
-		var close func()
-		var e error
-		if bind.Protocol == "udp" {
-			var pc net.PacketConn
-			pc, e = net.ListenPacket("udp", address)
-			if e == nil {
-				close = func() { pc.Close() }
-			}
-		} else {
-			var l net.Listener
-			l, e = net.Listen("tcp", address)
-			if e == nil {
-				close = func() { l.Close() }
-			}
-		}
-		if e == nil {
-			close()
+		if probeBinding(bind) == nil {
 			continue
 		}
 		allowed := false
@@ -310,14 +294,10 @@ func (r *Runtime) activate(ctx context.Context, b []byte) (any, error) {
 	var unit string
 	if j.Old != nil && j.Old.Adopted {
 		unit = "[Service]\nExecStart=\nExecStart=" + j.Candidate.Binary + " -c " + j.Candidate.Path + "\n"
-		if j.Candidate.Engine == "rathole" {
-			unit = "[Service]\nExecStart=\nExecStart=" + j.Candidate.Binary + " " + j.Candidate.Path + "\n"
-		}
+
 	} else {
 		args := " -c "
-		if j.Candidate.Engine == "rathole" {
-			args = " "
-		}
+
 		unit = "[Unit]\nDescription=TunnelManager managed tunnel instance\nAfter=network-online.target\n[Service]\nType=simple\nExecStart=" + j.Candidate.Binary + args + j.Candidate.Path + "\nRestart=no\nUMask=0077\nNoNewPrivileges=true\nProtectSystem=strict\nProtectHome=true\nPrivateTmp=true\nProtectKernelTunables=true\nProtectControlGroups=true\nCapabilityBoundingSet=CAP_NET_BIND_SERVICE\nRestrictAddressFamilies=AF_INET AF_INET6\nMemoryMax=256M\nTasksMax=256\nInaccessiblePaths=-" + r.ConfigDir + "/identity.key -" + r.ConfigDir + "/node.json -/etc/tunnelmanager -/var/lib/tunnelmanager-agent\n[Install]\nWantedBy=multi-user.target\n"
 	}
 	j.NewUnit = []byte(unit)

@@ -96,9 +96,9 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 		lower := strings.ToLower(filepath.Base(exe))
 		if strings.Contains(lower, "backhaul") {
 			name = "backhaul"
-		} else if strings.Contains(lower, "rathole") {
-			name = "rathole"
+		} else {
 		}
+
 		if name == "" {
 			continue
 		}
@@ -107,9 +107,7 @@ func (r *Runtime) Inventory(ctx context.Context, key []byte) (any, error) {
 			if (arg == "-c" || arg == "--config") && i+1 < len(args) {
 				path = args[i+1]
 			}
-			if name == "rathole" && strings.HasSuffix(arg, ".toml") {
-				path = arg
-			}
+
 		}
 		d := Discovered{Instance: Instance{ID: instanceID(unit), Name: strings.TrimSuffix(unit, ".service"), Engine: name, Unit: unit, Binary: exe, Path: path}, Active: props["ActiveState"], Enabled: props["UnitFileState"]}
 		if alias, ok := aliases[unit]; ok {

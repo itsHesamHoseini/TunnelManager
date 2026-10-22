@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
+	"net"
 	"os"
 	"regexp"
 	"strconv"
@@ -11,6 +12,28 @@ import (
 )
 
 var publishedPort = regexp.MustCompile(`(\[[0-9a-fA-F:]+\]|[0-9a-fA-F:.]+):(\d+)(?:-(\d+))?->\d+(?:-\d+)?/(tcp|udp)`)
+
+// Binding checks are deliberately independent of engine discovery/ownership.
+// An unrelated or unknown process holding a port is still a conflict.
+func probeBinding(bind engine.Binding) error {
+	host := bind.Host
+	if host == "*" {
+		host = ""
+	}
+	address := net.JoinHostPort(host, strconv.Itoa(bind.Port))
+	if bind.Protocol == "udp" {
+		c, e := net.ListenPacket("udp", address)
+		if e == nil {
+			c.Close()
+		}
+		return e
+	}
+	c, e := net.Listen("tcp", address)
+	if e == nil {
+		c.Close()
+	}
+	return e
+}
 
 func dockerConflict(output string, bind engine.Binding) bool {
 	for _, m := range publishedPort.FindAllStringSubmatch(output, 1000) {

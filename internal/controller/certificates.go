@@ -21,23 +21,22 @@ import (
 )
 
 type CertificateRequest struct {
-	Name           string `json:"name"`
-	Domain         string `json:"domain"`
-	Method         string `json:"method"`
-	Cert           string `json:"cert"`
-	Key            string `json:"key"`
-	Days           int    `json:"days"`
-	Email          string `json:"email"`
-	Zone           string `json:"zone"`
-	ProviderToken  string `json:"provider_token"`
-	Staging        bool   `json:"staging"`
-	AutoRenew      bool   `json:"auto_renew"`
-	AutoDeploy     bool   `json:"auto_deploy"`
-	AcceptTerms    bool   `json:"accept_terms"`
-	PKCS12Password string `json:"pkcs12_password"`
-	AccountKey     string `json:"account_key"`
-	OrderURL       string `json:"order_url"`
-	RecordID       string `json:"record_id"`
+	Name          string `json:"name"`
+	Domain        string `json:"domain"`
+	Method        string `json:"method"`
+	Cert          string `json:"cert"`
+	Key           string `json:"key"`
+	Days          int    `json:"days"`
+	Email         string `json:"email"`
+	Zone          string `json:"zone"`
+	ProviderToken string `json:"provider_token"`
+	Staging       bool   `json:"staging"`
+	AutoRenew     bool   `json:"auto_renew"`
+	AutoDeploy    bool   `json:"auto_deploy"`
+	AcceptTerms   bool   `json:"accept_terms"`
+	AccountKey    string `json:"account_key"`
+	OrderURL      string `json:"order_url"`
+	RecordID      string `json:"record_id"`
 }
 type CertificateDeployment struct {
 	Node      string   `json:"node"`
@@ -161,7 +160,6 @@ func (s *Server) certificateRequest(w http.ResponseWriter, r *http.Request) {
 			q.Request.ProviderToken = old.ProviderToken
 		}
 		q.Request.AccountKey = old.AccountKey
-		q.Request.PKCS12Password = old.PKCS12Password
 		if q.Request.Domain != old.Domain {
 			var linked bool
 			s.DB.QueryRow(r.Context(), "SELECT EXISTS(SELECT 1 FROM certificate_links WHERE certificate_id=$1 AND instance_id<>'')", q.ID).Scan(&linked)
@@ -272,7 +270,6 @@ func (s *Server) processCertificate(ctx context.Context, id string, q JobPayload
 				fail(errors.New("certificate_revision_changed"))
 				return
 			}
-			req.PKCS12Password = old.PKCS12Password
 			if req.ProviderToken == "" {
 				req.ProviderToken = old.ProviderToken
 			}
@@ -280,9 +277,7 @@ func (s *Server) processCertificate(ctx context.Context, id string, q JobPayload
 				req.AccountKey = old.AccountKey
 			}
 		}
-		if req.PKCS12Password == "" {
-			req.PKCS12Password = secure.Token(24)
-		}
+
 		if req.Method == "self-signed" {
 			if e := makeSelfSigned(&req); e != nil {
 				fail(e)

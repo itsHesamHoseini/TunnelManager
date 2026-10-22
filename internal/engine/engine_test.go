@@ -6,7 +6,7 @@ import (
 )
 
 func fixture(name string) Spec {
-	return Spec{Engine: name, Version: map[string]string{"rathole": "0.5.0", "backhaul": "0.7.2"}[name], Transport: "tcp", Listener: "listener", Dialer: "dialer", TransportBind: Endpoint{"0.0.0.0", 28100}, TransportRemote: Endpoint{"listener.example.com", 28100}, Token: "synthetic-token-not-a-credential", Routes: []Route{{ID: "one", Name: "First", User: Endpoint{"0.0.0.0", 24443}, Backend: Endpoint{"127.0.0.1", 2096}, Protocol: "tcp"}}}
+	return Spec{Engine: name, Version: "0.7.2", Transport: "tcp", Listener: "listener", Dialer: "dialer", TransportBind: Endpoint{"0.0.0.0", 28100}, TransportRemote: Endpoint{"listener.example.com", 28100}, Token: "synthetic-token-not-a-credential", Routes: []Route{{ID: "one", Name: "First", User: Endpoint{"0.0.0.0", 24443}, Backend: Endpoint{"127.0.0.1", 2096}, Protocol: "tcp"}}}
 }
 func TestRedactUnsupportedNestedArrayTables(t *testing.T) {
 	raw := "[client]\nremote_addr='example.com:28100'\ntoken='synthetic-top-level-secret'\n[[client.extensions]]\nname='kept-evidence'\npassword='synthetic-nested-password'\nitems=[{api_key='synthetic-inline-key', label='kept-label'}]\n"
@@ -21,8 +21,8 @@ func TestRedactUnsupportedNestedArrayTables(t *testing.T) {
 	}
 }
 func TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade(t *testing.T) {
-	s := fixture("rathole")
-	s.PeerOptions = map[string]map[string]any{"server": {"heartbeat_interval": float64(30), "transport": map[string]any{"tcp": map[string]any{"nodelay": true}}}, "client": {"retry_interval": float64(7), "services": map[string]any{"one": map[string]any{"nodelay": false}}}}
+	s := fixture("backhaul")
+	s.PeerOptions = map[string]map[string]any{"server": {"heartbeat": float64(30), "nodelay": true}, "client": {"retry_interval": float64(7), "connection_pool": float64(12), "nodelay": false}}
 	server, e := Render(s, "server")
 	if e != nil {
 		t.Fatal(e)
@@ -31,23 +31,11 @@ func TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade(t *testing
 	if e != nil {
 		t.Fatal(e)
 	}
-	parsed, _ := Parse(client)
-	if _, ok := table(parsed, "client")["retry_interval"].(int64); !ok {
-		t.Fatal("JSON roundtrip emitted a TOML float for the engine's integer interval")
-	}
-	parsed, _ = Parse(server)
-	if _, ok := table(parsed, "server")["heartbeat_interval"].(int64); !ok {
-		t.Fatal("integer heartbeat rendered as a TOML float")
-	}
-	backhaul := fixture("backhaul")
-	backhaul.Advanced = map[string]any{"connection_pool": float64(12)}
-	raw, e := Render(backhaul, "client")
-	if e != nil {
-		t.Fatal(e)
-	}
-	parsed, _ = Parse(raw)
-	if _, ok := table(parsed, "client")["connection_pool"].(int64); !ok {
-		t.Fatal("Backhaul integer option rendered as a TOML float")
+	for _, tc := range []struct{ raw, role, key string }{{server, "server", "heartbeat"}, {client, "client", "retry_interval"}, {client, "client", "connection_pool"}} {
+		parsed, _ := Parse(tc.raw)
+		if _, ok := table(parsed, tc.role)[tc.key].(int64); !ok {
+			t.Fatal("JSON roundtrip emitted TOML float", tc.key)
+		}
 	}
 	s.RawServer = Redact(server)
 	s.RawClient = Redact(client)
@@ -56,19 +44,20 @@ func TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade(t *testing
 	}
 	again, _ := Render(s, "client")
 	if !strings.Contains(again, "retry_interval = 7") || !strings.Contains(again, "nodelay = false") {
-		t.Fatal("scoped advanced options silently lost")
+		t.Fatal("scoped options silently lost")
 	}
-	p, e := ParseConfiguration(server+"\n[server.transport.noise]\npattern='Noise_XX_25519_ChaChaPoly_BLAKE2s'\n", "rathole")
+	p, e := ParseConfiguration(server+"\n[server.proxy_identity]\nmode='mutual'\n", "backhaul")
 	if e == nil && p.Reason == "" {
-		t.Fatal("unsupported mutual identity accepted for lossy conversion")
+		t.Fatal("unsupported identity accepted")
 	}
-	p, e = ParseConfiguration(server+"\n[client]\nremote_addr='example.com:28100'\n", "rathole")
+	p, e = ParseConfiguration(server+"\n[client]\nremote_addr='example.com:28100'\n", "backhaul")
 	if e == nil && p.Reason == "" {
 		t.Fatal("ambiguous dual role adopted")
 	}
 }
+
 func TestRoundTripAndThreeIndependentEndpoints(t *testing.T) {
-	for _, name := range []string{"backhaul", "rathole"} {
+	for _, name := range []string{"backhaul"} {
 		s := fixture(name)
 		server, e := Render(s, "server")
 		if e != nil {
@@ -122,7 +111,7 @@ func TestConflictAndResourceBounds(t *testing.T) {
 	if Validate(s) == nil {
 		t.Fatal("unbounded pool accepted")
 	}
-	s = fixture("rathole")
+	s = fixture("backhaul")
 	s.Routes = append(s.Routes, s.Routes[0])
 	if Validate(s) == nil {
 		t.Fatal("duplicate route accepted")
@@ -134,24 +123,30 @@ func TestConflictAndResourceBounds(t *testing.T) {
 		t.Fatal("unverified peer silently accepted")
 	}
 }
-func TestNoiseIdentityAndRouteSecrets(t *testing.T) {
-	s := fixture("rathole")
-	s.Transport = "noise"
+func TestSharedTokenMaskAndUnsupportedEngine(t *testing.T) {
+	s := fixture("backhaul")
+	s.Token = ""
 	if e := GenerateSecrets(&s); e != nil {
 		t.Fatal(e)
 	}
-	s.Routes[0].Token = "synthetic-route-secret"
 	raw, e := Render(s, "server")
 	if e != nil {
 		t.Fatal(e)
 	}
 	public := Public(s)
-	if public.NoisePrivate != Mask || public.Routes[0].Token != Mask || strings.Contains(Redact(raw), "synthetic-route-secret") {
-		t.Fatal("route/Noise secret exposed")
+	if public.Token != Mask || strings.Contains(Redact(raw), s.Token) {
+		t.Fatal("shared token exposed")
 	}
 	next := public
 	MergeSecrets(&next, s)
-	if next.NoisePrivate != s.NoisePrivate || next.Routes[0].Token != s.Routes[0].Token {
-		t.Fatal("masked edit lost secrets")
+	if next.Token != s.Token {
+		t.Fatal("masked edit lost token")
+	}
+	s.Engine = "unknown_engine"
+	if Validate(s) == nil {
+		t.Fatal("unsupported engine accepted")
+	}
+	if _, e = ParseConfiguration(raw, "unknown_engine"); e == nil {
+		t.Fatal("unsupported parser accepted")
 	}
 }

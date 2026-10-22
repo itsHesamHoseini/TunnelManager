@@ -13,3 +13,14 @@
 .console-shell .primary:hover:not(:disabled){background:#007680;color:#fff}.server-table{table-layout:fixed;min-width:690px}.console-shell .server-table th,.console-shell .server-table td{font-size:11px;padding:6px 7px;line-height:1.4;overflow:hidden;text-overflow:ellipsis}.console-shell .server-table small{font-size:10px;line-height:1.4}.server-table .server-name{overflow:hidden}.server-table .server-name .link{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}.server-table th:nth-child(1){width:16%}.server-table th:nth-child(2){width:15%}.server-table th:nth-child(3){width:14%}.server-table th:nth-child(4),.server-table th:nth-child(5),.server-table th:nth-child(6),.server-table th:nth-child(7){width:6%}.server-table th:nth-child(8){width:8%}.server-table th:nth-child(9){width:16%}.server-table th:nth-child(10){width:7%}.console-shell .server-table .status{font-size:9px;padding:2px 4px}.server-table th{white-space:normal}
 
 .console-sidebar{display:flex;flex-direction:column}.console-brand{flex-shrink:0}.console-sidebar nav{overflow-y:auto;flex:1;min-height:0;align-content:start;padding-bottom:8px}.console-sidefoot{position:static;flex-shrink:0;width:auto;margin-top:12px;padding-top:12px}.console-sidebar nav button{flex-shrink:0}@media(max-width:760px){.console-sidebar nav{flex:initial;overflow-y:hidden}.console-sidefoot{display:none}}
+.console-shell .server-table{min-width:0;table-layout:fixed;width:100%}
+.console-shell .server-table th,.console-shell .server-table td{overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;vertical-align:top}
+.console-shell .server-table th:nth-child(n){width:auto}
+.console-shell .server-table th:first-child{width:24%}.console-shell .server-table th:nth-child(2){width:22%}
+.console-shell .server-table th:last-child{width:13%}
+.console-shell .server-table .server-name .link{white-space:normal;overflow-wrap:anywhere;text-align:start}
+.console-shell .server-table .status{white-space:normal;max-width:100%}
+.console-shell .server-table .resource-value{font-size:11px}
+.console-shell .server-table .resource-label,.console-shell .server-table .resource-value small{font-size:9px}
+.server-table-wrap{max-width:100%}
+@media(max-width:760px){.console-shell .server-table{min-width:610px}}

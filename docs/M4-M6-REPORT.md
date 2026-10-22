@@ -1,3 +1,5 @@
+> Scope update 2026-10-23: the second engine was removed by explicit owner request. Earlier multi-engine requirements/results below are historical; they do not qualify the current Backhaul-only revision. Current acceptance: docs/REVISION-2.md.
+
 # M4–M6 delivery and operational evidence
 
 Released and deployed: **v0.6.0**, runtime source `89d9960278566c484bf0676d75a05bdb1c69bb2b`. Later commits add tests, images and reports only; production runtime code and dependency versions are unchanged.
@@ -18,7 +20,7 @@ Released and deployed: **v0.6.0**, runtime source `89d9960278566c484bf0676d75a05
 ## What works end to end
 
 - Discover actual services/configs without writes; pair on address/transport/authentication evidence and manually import ambiguous peers. Unmatched services stay visible and can be explicitly adopted individually. Native standalone foreign-service adoption preserves its PID, then stop/start works; original-file removal stays guarded.
-- Install checksum-pinned Rathole0.5.0 and Backhaul0.7.2. Browser create → validate → review diff/impact → prepare both peers → apply with local rollback → check actual HTTP → explicit confirmation passes over Rathole Noise/TLS and Backhaul TCP/WSS. User entry, transport listener/dialer and backend endpoints/direction remain independent.
+- Install checksum-pinned retired engine (removed by owner)0.5.0 and Backhaul0.7.2. Browser create → validate → review diff/impact → prepare both peers → apply with local rollback → check actual HTTP → explicit confirmation passes over retired engine (removed by owner) Noise/TLS and Backhaul TCP/WSS. User entry, transport listener/dialer and backend endpoints/direction remain independent.
 - Shared listener with two distinct clients on the same node: import/adopt, sequential port changes and actual HTTP on both resulting routes pass. Supported per-client retry settings, other-route options and per-instance revision hashes are preserved. Clone generates independent credentials; version restoration, unique-instance batch actions, disable/start and owned removal are exercised through the real API/agents.
 - Config/certificate plans preserve backups, CAS and file/unit drift checks. Independent real systemd timers restore actual traffic without an executor or while an agent is stopped. Manual config/unit drift blocks automatic overwriting. Explicit preserve-current releases only original failed watchdogs, keeps backups and marks affected old metadata observation-only; it is not called successful rollback.
 - Actual engine logs are bounded/redacted. Temporary detailed logs restore locally for both engines. Additional real Linux tests prove TCP/TLS/HTTP, invalid-hostname/HTTP503 failure results, ping3, echo128B and an explicitly confirmed sample at most64KiB. A recreated executor returns its persisted receipt without another HTTP request and rejects changed/expired retries.
@@ -43,9 +45,9 @@ The owned controller/database/edge are healthy and this stack publishes only its
 
 Native screenshots below come from actual disposable Linux engines/agents/browser. Their host names are deliberately labelled Synthetic; they are not production traffic. Fixture images elsewhere prove interface states only and are labelled `fixture`.
 
-- [Actual Rathole path and layered results](evidence/m4-native-rathole-noise-path-fa.png)
+- [Actual retired engine (removed by owner) path and layered results](evidence/m4-native-retired engine (removed by owner)-noise-path-fa.png)
 - [Actual Backhaul WSS path](evidence/m4-native-backhaul-wss-path-fa.png)
-- [TLS form, redacted diff and impact preview](evidence/m4-native-rathole-tls-preview.png)
+- [TLS form, redacted diff and impact preview](evidence/m4-native-retired engine (removed by owner)-tls-preview.png)
 - [Actual native mobile view](evidence/m4-native-mobile.png)
 - [Failed diagnostic fixture](evidence/m6-diagnostic-error-fixture-fa.png), [waiting fixture](evidence/m6-operation-waiting-fixture-fa.png), [dark fixture](evidence/m6-dark-tunnels-fixture-fa.png)
 

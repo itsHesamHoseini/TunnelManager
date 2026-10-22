@@ -139,6 +139,16 @@ func writeJSON(p string, v any) error {
 	return config.Atomic(p, b, 0600)
 }
 func (r *Runtime) load(id string) (Instance, error) {
+	v, e := r.loadRecorded(id)
+	if e == nil && v.Engine != "backhaul" {
+		return Instance{}, errors.New("unsupported_instance_engine")
+	}
+	return v, e
+}
+
+// Old ownership records remain on disk. Reading one for dependency protection
+// does not grant management, delete a file, or execute its unit.
+func (r *Runtime) loadRecorded(id string) (Instance, error) {
 	if !engine.ID(id) {
 		return Instance{}, errors.New("invalid_instance_id")
 	}

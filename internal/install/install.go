@@ -228,6 +228,9 @@ func (i *Installer) Setup(ctx context.Context, c config.Config, password string,
 	}
 	os.MkdirAll(c.Dir, 0700)
 	os.MkdirAll(c.ConfigDir, 0700)
+	if e := os.MkdirAll(filepath.Join(c.ConfigDir, "migration-backups"), 0700); e != nil {
+		return errors.New("migration backup directory unavailable")
+	}
 	snapshot, e := Snapshot(c)
 	if e != nil {
 		return e

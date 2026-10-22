@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -38,9 +37,9 @@ type Route struct {
 	User     Endpoint `json:"user"`
 	Backend  Endpoint `json:"backend"`
 	Protocol string   `json:"protocol"`
-	Token    string   `json:"token,omitempty"`
 }
 type Spec struct {
+	Token               string                    `json:"token,omitempty"`
 	PeerOptions         map[string]map[string]any `json:"peer_options,omitempty"`
 	Application         *Probe                    `json:"application,omitempty"`
 	Engine              string                    `json:"engine"`
@@ -51,14 +50,10 @@ type Spec struct {
 	TransportBind       Endpoint                  `json:"transport_bind"`
 	TransportRemote     Endpoint                  `json:"transport_remote"`
 	Routes              []Route                   `json:"routes"`
-	Token               string                    `json:"token,omitempty"`
-	NoisePrivate        string                    `json:"noise_private,omitempty"`
-	NoisePublic         string                    `json:"noise_public,omitempty"`
 	Certificate         string                    `json:"certificate,omitempty"`
 	CertificateHash     string                    `json:"certificate_hash,omitempty"`
 	CertificateRevision int64                     `json:"certificate_revision,omitempty"`
 	TLSName             string                    `json:"tls_name,omitempty"`
-	PKCS12Password      string                    `json:"pkcs12_password,omitempty"`
 	Advanced            map[string]any            `json:"advanced,omitempty"`
 	AllowUnverifiedTLS  bool                      `json:"allow_unverified_tls"`
 	RawServer           string                    `json:"raw_server,omitempty"`
@@ -81,8 +76,6 @@ type Artifact struct{ Engine, Version, Arch, URL, SHA256, Entry, License string 
 var Catalog = []Artifact{
 	{"backhaul", "0.7.2", "amd64", "https://github.com/Musixal/Backhaul/releases/download/v0.7.2/backhaul_linux_amd64.tar.gz", "57bf95c2eabeddb1152d2e94ac42f4310883ce0fb909ee2a57bd53503b2dabbc", "backhaul", "AGPL-3.0"},
 	{"backhaul", "0.7.2", "arm64", "https://github.com/Musixal/Backhaul/releases/download/v0.7.2/backhaul_linux_arm64.tar.gz", "9a424c97ff16fc3f682e8314c418790d2b5bf3136e008edbb6cd402ea00999f6", "backhaul", "AGPL-3.0"},
-	{"rathole", "0.5.0", "amd64", "https://github.com/rathole-org/rathole/releases/download/v0.5.0/rathole-x86_64-unknown-linux-gnu.zip", "3e7d0d0f365120cd3cd351d147d1a12ee960c8068b464d4dd533a3821873b80e", "rathole", "Apache-2.0"},
-	{"rathole", "0.5.0", "arm64", "https://github.com/rathole-org/rathole/releases/download/v0.5.0/rathole-aarch64-unknown-linux-musl.zip", "fa4a6fc63d86f8f1faa7c103a845e4715ce79a048455c0eec897b27237576564", "rathole", "Apache-2.0"},
 }
 var idPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
@@ -139,9 +132,10 @@ func ValidHost(host string) bool {
 	return true
 }
 func Validate(s Spec) error {
-	if s.Engine != "backhaul" && s.Engine != "rathole" {
-		return errors.New("select Backhaul or Rathole")
+	if s.Engine != "backhaul" {
+		return errors.New("unsupported_engine")
 	}
+
 	if _, e := ArtifactFor(s.Engine, s.Version, "amd64"); e != nil {
 		return e
 	}
@@ -157,37 +151,17 @@ func Validate(s Spec) error {
 	if len(s.Routes) < 1 || len(s.Routes) > 200 {
 		return errors.New("one to 200 routes required")
 	}
-	if s.Engine == "backhaul" && !strings.Contains("|tcp|tcpmux|ws|wss|wsmux|wssmux|", "|"+s.Transport+"|") {
+	if !strings.Contains("|tcp|tcpmux|ws|wss|wsmux|wssmux|", "|"+s.Transport+"|") {
 		return errors.New("unsupported Backhaul transport")
 	}
-	if s.Engine == "rathole" && !strings.Contains("|tcp|noise|tls|", "|"+s.Transport+"|") {
-		return errors.New("unsupported Rathole transport")
-	}
+
 	if strings.HasPrefix(s.Transport, "wss") && !s.AllowUnverifiedTLS {
 		return errors.New("this Backhaul version encrypts WSS but does not verify the peer certificate; explicit acknowledgement required")
 	}
-	if (strings.HasPrefix(s.Transport, "wss") || s.Transport == "tls") && !ID(s.Certificate) {
+	if strings.HasPrefix(s.Transport, "wss") && !ID(s.Certificate) {
 		return errors.New("select a deployed transport certificate")
 	}
-	if s.Engine == "rathole" && s.Transport == "noise" && s.NoisePublic == "" {
-		return errors.New("Noise identity missing")
-	}
-	if s.Transport == "noise" {
-		public, e := base64.StdEncoding.DecodeString(s.NoisePublic)
-		if e != nil || len(public) != 32 {
-			return errors.New("invalid_Noise_public_key")
-		}
-	}
-	if s.Transport == "noise" && s.NoisePrivate != "" {
-		private, e := base64.StdEncoding.DecodeString(s.NoisePrivate)
-		if e != nil || len(private) != 32 {
-			return errors.New("invalid_Noise_private_key")
-		}
-		k, e := ecdh.X25519().NewPrivateKey(private)
-		if e != nil || base64.StdEncoding.EncodeToString(k.PublicKey().Bytes()) != s.NoisePublic {
-			return errors.New("Noise_identity_keys_disagree")
-		}
-	}
+
 	if p := s.Application; p != nil {
 		if (p.Kind != "http" && p.Kind != "echo") || !validEndpoint(p.Endpoint, false) || len(p.Path) > 500 || len(p.Expected) > 128 || strings.ContainsAny(p.Path, "\r\n") {
 			return errors.New("invalid_application_probe")
@@ -203,7 +177,7 @@ func Validate(s Spec) error {
 		if r.Protocol != "tcp" && r.Protocol != "udp" {
 			return errors.New("route protocol must be tcp or udp")
 		}
-		if s.Engine == "backhaul" && r.Protocol != "tcp" {
+		if r.Protocol != "tcp" {
 			return errors.New("this adapter requires explicit TCP routes; existing UDP configs stay read-only")
 		}
 		b := Binding{r.User.Host, r.User.Port, r.Protocol, "user"}
@@ -263,14 +237,7 @@ func GenerateSecrets(s *Spec) error {
 		}
 		s.Token = base64.RawURLEncoding.EncodeToString(b)
 	}
-	if s.Transport == "noise" && s.NoisePrivate == "" {
-		k, e := ecdh.X25519().GenerateKey(rand.Reader)
-		if e != nil {
-			return e
-		}
-		s.NoisePrivate = base64.StdEncoding.EncodeToString(k.Bytes())
-		s.NoisePublic = base64.StdEncoding.EncodeToString(k.PublicKey().Bytes())
-	}
+
 	return nil
 }
 func Conflict(a, b Binding) bool {
@@ -303,88 +270,43 @@ func Render(s Spec, role string) (string, error) {
 	if role != "server" && role != "client" {
 		return "", errors.New("role must be server/client")
 	}
-	if role == "server" && s.Transport == "noise" && s.NoisePrivate == "" {
-		return "", errors.New("Noise_listener_private_key_required")
-	}
+
 	cfg := map[string]any{}
 	side := map[string]any{}
 	cfg[role] = side
-	if s.Engine == "backhaul" {
-		side["transport"] = s.Transport
-		side["token"] = s.Token
-		side["log_level"] = "info"
-		side["web_port"] = 0
-		side["sniffer"] = false
-		side["skip_optz"] = true
-		if role == "server" {
-			side["bind_addr"] = s.TransportBind.String()
-			ports := []string{}
-			for _, r := range s.Routes {
-				ports = append(ports, r.User.String()+"="+r.Backend.String())
-			}
-			side["ports"] = ports
-			if strings.HasPrefix(s.Transport, "wss") {
-				side["tls_cert"] = CertPath(s.Certificate, "cert.pem")
-				side["tls_key"] = CertPath(s.Certificate, "key.pem")
-			}
-		} else {
-			side["remote_addr"] = s.TransportRemote.String()
-			side["connection_pool"] = 8
-			side["retry_interval"] = 3
+
+	side["transport"] = s.Transport
+	side["token"] = s.Token
+	side["log_level"] = "info"
+	side["web_port"] = 0
+	side["sniffer"] = false
+	side["skip_optz"] = true
+	if role == "server" {
+		side["bind_addr"] = s.TransportBind.String()
+		ports := []string{}
+		for _, r := range s.Routes {
+			ports = append(ports, r.User.String()+"="+r.Backend.String())
 		}
-		for k, v := range s.Advanced {
-			if role == "server" && (k == "connection_pool" || k == "aggressive_pool" || k == "dial_timeout" || k == "retry_interval") {
-				continue
-			}
-			if role == "client" && (k == "heartbeat" || k == "channel_size" || k == "mux_con") {
-				continue
-			}
-			side[k] = v
+		side["ports"] = ports
+		if strings.HasPrefix(s.Transport, "wss") {
+			side["tls_cert"] = CertPath(s.Certificate, "cert.pem")
+			side["tls_key"] = CertPath(s.Certificate, "key.pem")
 		}
 	} else {
-		side["default_token"] = s.Token
-		transport := map[string]any{"type": s.Transport}
-		side["transport"] = transport
-		if role == "server" {
-			side["bind_addr"] = s.TransportBind.String()
-		} else {
-			side["remote_addr"] = s.TransportRemote.String()
-		}
-		if s.Transport == "noise" {
-			n := map[string]any{}
-			transport["noise"] = n
-			if role == "server" {
-				n["local_private_key"] = s.NoisePrivate
-			} else {
-				n["remote_public_key"] = s.NoisePublic
-			}
-		}
-		if s.Transport == "tls" {
-			t := map[string]any{}
-			transport["tls"] = t
-			if role == "server" {
-				t["pkcs12"] = CertPath(s.Certificate, "identity.pfx")
-				t["pkcs12_password"] = s.PKCS12Password
-			} else {
-				t["trusted_root"] = CertPath(s.Certificate, "cert.pem")
-				t["hostname"] = s.TLSName
-			}
-		}
-		services := map[string]any{}
-		side["services"] = services
-		for _, r := range s.Routes {
-			v := map[string]any{"type": r.Protocol}
-			if r.Token != "" {
-				v["token"] = r.Token
-			}
-			if role == "server" {
-				v["bind_addr"] = r.User.String()
-			} else {
-				v["local_addr"] = r.Backend.String()
-			}
-			services[r.ID] = v
-		}
+		side["remote_addr"] = s.TransportRemote.String()
+		side["connection_pool"] = 8
+		side["retry_interval"] = 3
 	}
+	for k, v := range s.Advanced {
+		if role == "server" && (k == "connection_pool" || k == "aggressive_pool" || k == "dial_timeout" || k == "retry_interval") {
+			continue
+		}
+		if role == "client" && (k == "heartbeat" || k == "channel_size" || k == "mux_con") {
+			continue
+		}
+		side[k] = v
+	}
+
 	// Per-service options on another route must not synthesize a service without
 	// its endpoint. Shared expansion renders those options with their own routes.
 	encoded, _ := json.Marshal(s.PeerOptions[role])
@@ -475,17 +397,6 @@ func Public(s Spec) Spec {
 	var q Spec
 	json.Unmarshal(b, &q)
 	q.Token = Mask
-	for i := range q.Routes {
-		if q.Routes[i].Token != "" {
-			q.Routes[i].Token = Mask
-		}
-	}
-	if q.NoisePrivate != "" {
-		q.NoisePrivate = Mask
-	}
-	if q.PKCS12Password != "" {
-		q.PKCS12Password = Mask
-	}
 	if q.RawServer != "" {
 		q.RawServer = Redact(q.RawServer)
 	}
@@ -495,24 +406,11 @@ func Public(s Spec) Spec {
 	return q
 }
 func MergeSecrets(next *Spec, old Spec) {
-	for i := range next.Routes {
-		for _, r := range old.Routes {
-			if r.ID == next.Routes[i].ID && (next.Routes[i].Token == Mask || next.Routes[i].Token == "") {
-				next.Routes[i].Token = r.Token
-			}
-		}
-	}
 	if next.Token == "" || next.Token == Mask {
 		next.Token = old.Token
 	}
-	if next.NoisePrivate == "" || next.NoisePrivate == Mask {
-		next.NoisePrivate = old.NoisePrivate
-		next.NoisePublic = old.NoisePublic
-	}
-	if next.PKCS12Password == "" || next.PKCS12Password == Mask {
-		next.PKCS12Password = old.PKCS12Password
-	}
 }
+
 func SortedRouteIDs(s Spec) []string {
 	out := []string{}
 	for _, r := range s.Routes {

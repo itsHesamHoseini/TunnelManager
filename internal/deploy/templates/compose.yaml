@@ -29,6 +29,7 @@ services:
       db: {condition: service_healthy}
     volumes:
       - "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/policy:/policy:rw"
+      - "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/migration-backups:/migration-backups:rw"
       - "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/controller.json:/config/controller.json:ro"
       - "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/master.key:/config/master.key:ro"
       - "${TUNNELMANAGER_CONFIG_DIR:-/etc/tunnelmanager}/db-password:/config/db-password:ro"

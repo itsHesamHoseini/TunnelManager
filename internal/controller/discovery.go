@@ -40,7 +40,12 @@ func (s *Server) discoveries(ctx context.Context) ([]discoveryNode, error) {
 			Addresses []string             `json:"addresses"`
 		}
 		json.Unmarshal(b, &data)
-		n.Instances = data.Instances
+		n.Instances = []nodeops.Discovered{}
+		for _, instance := range data.Instances {
+			if instance.Engine == "backhaul" {
+				n.Instances = append(n.Instances, instance)
+			}
+		}
 		n.Addresses = data.Addresses
 		out = append(out, n)
 	}
@@ -92,6 +97,9 @@ func findDiscovered(nodes []discoveryNode, node, id string) (nodeops.Discovered,
 	return nodeops.Discovered{}, errors.New("discovered_instance_missing")
 }
 func pairedSpec(listener, dialer string, a, b nodeops.Discovered) (engine.Spec, error) {
+	if a.Engine != "backhaul" || b.Engine != "backhaul" {
+		return engine.Spec{}, errors.New("unsupported_engine")
+	}
 	if a.Engine != b.Engine || a.Role != "server" || b.Role != "client" || a.Parsed.Transport != b.Parsed.Transport || listener == dialer {
 		return engine.Spec{}, errors.New("select_corresponding_server_and_client")
 	}
@@ -108,18 +116,9 @@ func pairedSpec(listener, dialer string, a, b nodeops.Discovered) (engine.Spec, 
 	}
 	spec := engine.Spec{Engine: a.Engine, Version: a.Version, Transport: a.Parsed.Transport, Listener: listener, Dialer: dialer, TransportBind: bind, TransportRemote: remote, Routes: []engine.Route{}}
 	spec.PeerOptions = map[string]map[string]any{"server": a.Parsed.Options, "client": b.Parsed.Options}
-	if spec.Engine == "backhaul" {
-		spec.Routes = a.Parsed.Routes
-	} else {
-		for _, ar := range a.Parsed.Routes {
-			for _, br := range b.Parsed.Routes {
-				if ar.ID == br.ID && ar.Protocol == br.Protocol {
-					ar.Backend = br.Backend
-					spec.Routes = append(spec.Routes, ar)
-				}
-			}
-		}
-	}
+
+	spec.Routes = a.Parsed.Routes
+
 	if len(spec.Routes) == 0 {
 		return spec, errors.New("no_corresponding_routes_select_manual_endpoints")
 	}

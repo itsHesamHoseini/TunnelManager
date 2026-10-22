@@ -5,6 +5,9 @@ import "errors"
 // Read only the secrets needed by already selected routes. Imported configs are
 // retained on the node; the controller stores this value only in AEAD ciphertext.
 func ImportSecrets(s *Spec, serverRaw, clientRaw string) error {
+	if s.Engine != "backhaul" {
+		return errors.New("unsupported_engine")
+	}
 	a, e := Parse(serverRaw)
 	if e != nil {
 		return e
@@ -17,35 +20,11 @@ func ImportSecrets(s *Spec, serverRaw, clientRaw string) error {
 	if server == nil || client == nil {
 		return errors.New("peer_roles_changed")
 	}
-	if s.Engine == "backhaul" {
-		s.Token = text(server, "token")
-		if s.Token != text(client, "token") {
-			return errors.New("peer_tokens_disagree")
-		}
-	} else {
-		s.Token = text(server, "default_token")
-		if s.Token != text(client, "default_token") {
-			return errors.New("peer_tokens_disagree")
-		}
-		if s.Token == "" {
-			if e := GenerateSecrets(s); e != nil {
-				return e
-			}
-		}
-		for i := range s.Routes {
-			sid := s.Routes[i].ID
-			st := text(table(table(server, "services"), sid), "token")
-			ct := text(table(table(client, "services"), sid), "token")
-			if st != ct {
-				return errors.New("route_tokens_disagree")
-			}
-			s.Routes[i].Token = st
-		}
-		st, ct := table(server, "transport"), table(client, "transport")
-		s.NoisePrivate = text(table(st, "noise"), "local_private_key")
-		s.NoisePublic = text(table(ct, "noise"), "remote_public_key")
-		s.PKCS12Password = text(table(st, "tls"), "pkcs12_password")
-		s.TLSName = text(table(ct, "tls"), "hostname")
+
+	s.Token = text(server, "token")
+	if s.Token != text(client, "token") {
+		return errors.New("peer_tokens_disagree")
 	}
+
 	return nil
 }

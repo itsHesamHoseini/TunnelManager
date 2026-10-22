@@ -33,6 +33,7 @@ import (
 var schema embed.FS
 
 type Config struct {
+	MigrationBackupDir           string
 	PolicyDirectory              string
 	Language                     string
 	Address, Origin, DatabaseURL string
@@ -96,6 +97,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		defaults.Profile = "strict"
 	}
 	s := &Server{Config: cfg, DB: p, Limiter: limit.New(), dummy: secure.Password(secure.Token(32)), passwordSlots: make(chan struct{}, 2), agentSlots: make(chan struct{}, 8), connected: map[string]*websocket.Conn{}, settings: defaults}
+
 	var encrypted []byte
 	if e = p.QueryRow(ctx, "SELECT encrypted FROM settings WHERE id=1").Scan(&encrypted); e == nil {
 		b, e = secure.Open(cfg.Key, "settings", encrypted)
@@ -105,6 +107,14 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		if e = json.Unmarshal(b, &s.settings); e != nil {
 			return nil, e
 		}
+	}
+	if cfg.MigrationBackupDir == "" {
+		p.Close()
+		return nil, errors.New("migration_backup_directory_required")
+	}
+	if _, e = s.RetireEngine(ctx, filepath.Join(cfg.MigrationBackupDir, "before-5-"+secure.Token(8)+".backup")); e != nil {
+		p.Close()
+		return nil, e
 	}
 	s.syncEdgeProfile()
 	return s, nil
@@ -158,7 +168,7 @@ func fail(w http.ResponseWriter, status int, code, en, fa string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"code": code, "message": en, "message_fa": fa})
+	json.NewEncoder(w).Encode(map[string]string{"code": code, "message": en, "message_fa": fa, "request_id": w.Header().Get("X-Request-ID")})
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 65536)

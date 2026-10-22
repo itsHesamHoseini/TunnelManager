@@ -31,6 +31,9 @@ func (s *Server) readTunnel(ctx context.Context, id string) (TunnelRecord, int64
 	}
 	var r TunnelRecord
 	e = s.openValue("tunnel:"+id, cipher, &r)
+	if e == nil && r.Spec.Engine != "backhaul" {
+		return TunnelRecord{}, 0, false, errors.New("unsupported_engine")
+	}
 	return r, revision, managed, e
 }
 func (s *Server) tunnelList(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +54,7 @@ func (s *Server) tunnelList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var record TunnelRecord
-		if s.openValue("tunnel:"+id, cipher, &record) != nil {
+		if s.openValue("tunnel:"+id, cipher, &record) != nil || record.Spec.Engine != "backhaul" {
 			continue
 		}
 		items = append(items, map[string]any{"id": id, "name": name, "revision": rev, "spec": engine.Public(record.Spec), "instances": record.Instances, "hashes": record.Hashes, "managed": managed, "desired": desired, "health": json.RawMessage(health), "updated": updated})
@@ -197,11 +200,10 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, errors.New("tunnel_name_required"))
 		return
 	}
-	if q.Spec.Transport != "tls" && !strings.HasPrefix(q.Spec.Transport, "wss") {
+	if !strings.HasPrefix(q.Spec.Transport, "wss") {
 		q.Spec.Certificate = ""
 		q.Spec.CertificateHash = ""
 		q.Spec.CertificateRevision = 0
-		q.Spec.PKCS12Password = ""
 		q.Spec.TLSName = ""
 	}
 	if q.Spec.Certificate != "" {
@@ -214,7 +216,6 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 			badOperation(w, e)
 			return
 		}
-		q.Spec.PKCS12Password = cert.PKCS12Password
 		q.Spec.CertificateHash = engine.Digest([]byte(cert.Cert))
 		q.Spec.CertificateRevision = certRevision
 		if q.Spec.TLSName == "" {
@@ -476,7 +477,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 				fail(errors.New("post_apply_transport_failed"))
 				return
 			}
-			if part.Spec.Transport == "tls" || strings.HasPrefix(part.Spec.Transport, "wss") {
+			if strings.HasPrefix(part.Spec.Transport, "wss") {
 				check, e = s.command(ctx, id, part.Node, "post_tls_"+engine.Digest([]byte(identity))[:12], "diagnostic", nodeops.Diagnostic{Kind: "tls", Endpoint: part.Spec.TransportRemote, CA: part.Spec.Certificate, ServerName: part.Spec.TLSName})
 				json.Unmarshal(check.Data, &result)
 				if e != nil || result.Status != "passed" {

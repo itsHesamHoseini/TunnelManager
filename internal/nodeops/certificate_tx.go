@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,7 +29,7 @@ type certTransaction struct {
 	Members                                      []certMember
 }
 
-var certFiles = []string{"cert.pem", "key.pem", "identity.pfx"}
+var certFiles = []string{"cert.pem", "key.pem"}
 
 func filesHash(files map[string][]byte) string {
 	if len(files) == 0 {
@@ -132,7 +131,7 @@ func (r *Runtime) certificateMembers(ctx context.Context, q Certificate, leaf *x
 			continue
 		}
 		id := strings.TrimSuffix(entry.Name(), ".json")
-		v, e := r.load(id)
+		v, e := r.loadRecorded(id)
 		if e != nil {
 			continue
 		}
@@ -151,10 +150,8 @@ func (r *Runtime) certificateMembers(ctx context.Context, q Certificate, leaf *x
 				if child, ok := value.(map[string]any); ok {
 					walk(child)
 				} else if s, ok := value.(string); ok {
-					for _, name := range certFiles {
-						if s == dir+name {
-							uses = true
-						}
+					if strings.HasPrefix(s, dir) {
+						uses = true
 					}
 				}
 			}
@@ -162,6 +159,9 @@ func (r *Runtime) certificateMembers(ctx context.Context, q Certificate, leaf *x
 		walk(data)
 		if !uses {
 			continue
+		}
+		if v.Engine != "backhaul" {
+			return nil, errors.New("external_certificate_consumer_preserved_use_separate_certificate")
 		}
 		if !selected[id] {
 			return nil, errors.New("include_all_instances_using_this_certificate")
@@ -175,22 +175,7 @@ func (r *Runtime) certificateMembers(ctx context.Context, q Certificate, leaf *x
 		if q.TrustOnly && v.Role == "server" {
 			return nil, errors.New("listener_still_requires_private_certificate_identity")
 		}
-		if v.Engine == "rathole" && v.Role == "client" {
-			side, _ := data["client"].(map[string]any)
-			transport, _ := side["transport"].(map[string]any)
-			tlsConfig, _ := transport["tls"].(map[string]any)
-			hostname, _ := tlsConfig["hostname"].(string)
-			if hostname == "" {
-				remote, _ := side["remote_addr"].(string)
-				ep, e := engine.ParseEndpoint(remote)
-				if e == nil {
-					hostname = ep.Host
-				}
-			}
-			if hostname != "" && leaf.VerifyHostname(hostname) != nil {
-				return nil, errors.New("certificate_does_not_match_linked_peer_hostname")
-			}
-		}
+
 		out = append(out, certMember{Instance: v, Active: isState(ctx, "is-active", v.Unit, "active")})
 		delete(selected, id)
 	}
@@ -236,33 +221,7 @@ func (r *Runtime) prepareCert(ctx context.Context, q Certificate) (any, error) {
 	next := map[string][]byte{"cert.pem": []byte(q.Cert)}
 	if !q.TrustOnly {
 		next["key.pem"] = []byte(q.Key)
-		if q.PKCS12Password != "" {
-			if _, e := exec.LookPath("openssl"); e != nil {
-				return nil, errors.New("openssl_required_for_rathole_tls_identity")
-			}
-			if strings.ContainsAny(q.PKCS12Password, "\r\n") {
-				return nil, errors.New("invalid_pkcs12_password")
-			}
-			dir := r.file("certificate-staging", q.RequestID)
-			for _, name := range []string{"cert.pem", "key.pem"} {
-				if e = config.Atomic(filepath.Join(dir, name), next[name], 0600); e != nil {
-					return nil, e
-				}
-			}
-			cmd := exec.CommandContext(ctx, "openssl", "pkcs12", "-export", "-out", filepath.Join(dir, "identity.pfx"), "-inkey", filepath.Join(dir, "key.pem"), "-in", filepath.Join(dir, "cert.pem"), "-passout", "stdin")
-			cmd.Stdin = strings.NewReader(q.PKCS12Password + "\n")
-			e = cmd.Run()
-			if e == nil {
-				next["identity.pfx"], e = readRegular(filepath.Join(dir, "identity.pfx"), 131072)
-			}
-			for _, name := range certFiles {
-				os.Remove(filepath.Join(dir, name))
-			}
-			os.Remove(dir)
-			if e != nil {
-				return nil, errors.New("pkcs12_generation_failed")
-			}
-		}
+
 	}
 	j := certTransaction{ID: id, Certificate: q.ID, RequestHash: hash, Phase: "prepared", Old: old, New: next, NewHash: filesHash(next), Previous: r.certState(q.ID), Members: members}
 	j.Deadline = time.Now().Add(5 * time.Minute)

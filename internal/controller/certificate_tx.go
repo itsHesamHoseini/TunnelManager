@@ -82,10 +82,9 @@ func (s *Server) deployCertificateTransaction(ctx context.Context, id string, q 
 	for _, target := range targets {
 		var expected string
 		s.DB.QueryRow(ctx, "SELECT hash FROM certificate_links WHERE certificate_id=$1 AND node_id=$2 LIMIT 1", q.Certificate, target.Node).Scan(&expected)
-		payload := nodeops.Certificate{ID: q.Certificate, RequestID: id, Stage: "prepare", Domain: req.Domain, Cert: req.Cert, Key: req.Key, PKCS12Password: req.PKCS12Password, ExpectedHash: expected, Instances: target.Instances, TrustOnly: target.TrustOnly, Confirm: true}
+		payload := nodeops.Certificate{ID: q.Certificate, RequestID: id, Stage: "prepare", Domain: req.Domain, Cert: req.Cert, Key: req.Key, ExpectedHash: expected, Instances: target.Instances, TrustOnly: target.TrustOnly, Confirm: true}
 		if target.TrustOnly {
 			payload.Key = ""
-			payload.PKCS12Password = ""
 		}
 		if _, e := command(target, "prepare", payload); e != nil {
 			fail(e)

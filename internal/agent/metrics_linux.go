@@ -177,7 +177,7 @@ func (s *Sampler) Collect(parent context.Context) protocol.Telemetry {
 		born := number(fields[19])
 		sample := processSample{Ticks: ticks, Start: born}
 		next[pid] = sample
-		p := protocol.Process{PID: pid, Name: name, RAM: number(fields[21]) * uint64(os.Getpagesize()), Uptime: uptime - float64(born)/s.hz, Engine: strings.Contains(strings.ToLower(name), "rathole") || strings.Contains(strings.ToLower(name), "backhaul")}
+		p := protocol.Process{PID: pid, Name: name, RAM: number(fields[21]) * uint64(os.Getpagesize()), Uptime: uptime - float64(born)/s.hz, Engine: strings.Contains(strings.ToLower(name), "backhaul")}
 		if old, ok := s.process[pid]; ok && old.Start == born && ticks >= old.Ticks && delta > 0 && delta <= 120 {
 			cpu := 100 * float64(ticks-old.Ticks) / s.hz / delta
 			p.CPU = &cpu
@@ -265,7 +265,7 @@ func (s *Sampler) Collect(parent context.Context) protocol.Telemetry {
 				continue
 			}
 			n := f[0]
-			if !strings.Contains(n, "backhaul") && !strings.Contains(n, "rathole") && !strings.HasPrefix(n, "tunnelmanager-") {
+			if !strings.Contains(n, "backhaul") && !strings.HasPrefix(n, "tunnelmanager-") {
 				continue
 			}
 			d.Services = append(d.Services, protocol.Service{Name: n, Active: f[2], Enabled: "not observed"})

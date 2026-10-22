@@ -1,3 +1,5 @@
+> Scope update 2026-10-23: the second engine was removed by explicit owner request. Earlier multi-engine requirements/results below are historical; they do not qualify the current Backhaul-only revision. Current acceptance: docs/REVISION-2.md.
+
 # راهنمای کار روزمره
 
 ## مسیرهای اصلی نسخهٔ ۰٫۷
@@ -27,7 +29,7 @@
 
 ## تونل تازه بسازید
 
-۱. از ابزارهای هر دو سرور، نسخهٔ انتخابی Rathole یا Backhaul را نصب کنید.
+۱. از ابزارهای هر دو سرور، نسخهٔ تأییدشدهٔ Backhaul را نصب کنید.
 
 ۲. در «ساخت تونل»، شنونده و اتصال‌گیرنده را مشخص کنید. برای ریورس معمول، خارج به پورت ارتباط روی ایران وصل می‌شود.
 

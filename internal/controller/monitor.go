@@ -115,7 +115,7 @@ func (s *Server) processTunnelCheck(ctx context.Context, id string, q JobPayload
 	out["process"] = processes
 	transport := run(rec.Spec.Dialer, "transport", "diagnostic", nodeops.Diagnostic{Kind: "tcp", Endpoint: rec.Spec.TransportRemote})
 	out["transport"] = transport
-	if rec.Spec.Transport == "tls" || rec.Spec.Transport == "wss" || rec.Spec.Transport == "wssmux" {
+	if rec.Spec.Transport == "wss" || rec.Spec.Transport == "wssmux" {
 		out["tls"] = run(rec.Spec.Dialer, "tls", "diagnostic", nodeops.Diagnostic{Kind: "tls", Endpoint: rec.Spec.TransportRemote, ServerName: rec.Spec.TLSName, CA: rec.Spec.Certificate})
 	} else {
 		out["tls"] = map[string]string{"status": "not_applicable"}

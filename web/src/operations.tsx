@@ -1,9 +1,10 @@
 import React,{useEffect,useRef,useState} from 'react';
+import {Timestamp, presentationLanguage} from './presentation';
 
 let language='en';
-export function operationsLanguage(value:string){language=value}
+export function operationsLanguage(value:string){language=value;presentationLanguage(value)}
 export const tr=(en:string,fa:string)=>language==='fa'?fa:en;
-export const stamp=(value:any)=>value?new Date(value).toLocaleString(language==='fa'?'fa-IR':'en-GB'):'—';
+export const stamp=(value?:string)=><Timestamp at={value}/>;
 export const key=()=>crypto.randomUUID().replaceAll('-','');
 const retries=new Map<string,string>();
 export async function request(path:string,method='GET',body?:any){
@@ -14,6 +15,11 @@ export async function request(path:string,method='GET',body?:any){
  const data=await response.json();if(signature&&response.status<500)retries.delete(signature);if(!response.ok)throw new Error(tr(data.message,data.message_fa)||data.code);return data;
 }
 const explanations:Record<string,[string,string]>={
+ success:['Successful result recorded.','نتیجهٔ موفق ثبت شد.'],
+ authenticated:['Agent identity verified.','هویت عامل تأیید شد.'],
+ created:['Created. Continue with the next step shown on this page.','ایجاد شد؛ مرحلهٔ بعدی همین صفحه را ادامه دهید.'],
+ pending:['Waiting for identity approval. Compare the fingerprint.','منتظر تأیید هویت؛ اثرانگشت را مقایسه کنید.'],
+ node_offline_or_observation_stale:['Fresh observations are missing. Check this server’s agent connection and logs.','دادهٔ تازه موجود نیست؛ اتصال و لاگ عامل همین سرور را بررسی کنید.'],
  rediscover_and_import_changed_configuration_before_adoption:['Rediscover both peers and explicitly reimport their current configuration before adoption.','دو طرف را دوباره کشف و کانفیگ فعلی را صریحاً وارد کنید؛ سپس مدیریت را بپذیرید.'],
  rediscover_before_adoption:['Run a fresh discovery on this server before adopting its evidence.','پیش از پذیرش مدیریت، کشف تازهٔ همین سرور را اجرا کنید.'],
  adopt_all_certificate_consumers_before_rotation:['This certificate is still used by a service outside management. Adopt that consumer or move it to a separate certificate before rotation.','یک سرویس خارج از مدیریت هنوز از این گواهی استفاده می‌کند؛ پیش از تغییر گواهی، مدیریت آن را بپذیرید یا گواهی جدا برایش تعیین کنید.'],
@@ -22,7 +28,6 @@ const explanations:Record<string,[string,string]>={
 
  service_action_requires_new_check:['A service action changed this path. Run a fresh connection check.','سرویس تغییر کرده است؛ بررسی تازهٔ اتصال را اجرا کنید.'],
  certificate_rotation_requires_new_check:['The transport certificate changed. Run a fresh TLS and application check.','گواهی ارتباط تغییر کرده است؛ TLS و کاربرد را دوباره بررسی کنید.'],
- openssl_required_for_rathole_tls_identity:['Install the openssl package on this node to build the Rathole TLS identity, then retry.','برای ساخت هویت TLS رتهول، بستهٔ openssl را روی همین سرور نصب و دوباره تلاش کنید.'],
  sustained_process_resource_threshold:['Service restarted after sustained CPU/RAM threshold.','سرویس پس از عبور پیوسته از آستانهٔ CPU یا RAM ری‌استارت شد.'],
  sustained_failed_unit:['Failed service restarted after configured duration.','سرویس ناموفق پس از مدت تنظیم‌شده ری‌استارت شد.'],
  node_offline:['This server agent is disconnected. Reconnect it, then retry; local rollback remains independent.','عامل این سرور قطع است؛ پس از اتصال دوباره تلاش کنید. بازگشت محلی مستقل ادامه دارد.'],
@@ -70,9 +75,28 @@ const explanations:Record<string,[string,string]>={
  probable_port_conflict:['Probable cause: occupied port. Inspect listeners on this server.','علت احتمالی: تداخل پورت؛ پورت‌های سرور را بررسی کنید.'],
  probable_network_or_firewall:['Probable cause: network or firewall. Run the transport check from the peer.','علت احتمالی: شبکه یا فایروال؛ بررسی اتصال را از سرور مقابل اجرا کنید.']
 };
-export function explain(code:string){const value=explanations[code]||explanations[code.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'')];return value?tr(...value):code}
+export function explain(code:string){if(!code)return '';const value=explanations[code]||explanations[code.replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_|_$/g,'')];return value?tr(...value):/[آ-ی]/.test(code)?code:tr('The operation needs review. Inspect this server and its technical details before retrying.','این مورد نیاز به بررسی دارد؛ وضعیت همین سرور و جزئیات فنی را ببینید و سپس دوباره تلاش کنید.')}
+const events:Record<string,[string,string]>={
+ 'operation-failed':['An operation failed. Open its result and check the affected server.','یک عملیات ناموفق بود؛ نتیجه و سرور مربوط را بررسی کنید.'],
+ 'operation-succeeded':['Operation finished. Review its recorded result.','عملیات انجام شد؛ نتیجهٔ ثبت‌شده را ببینید.'],
+ 'login':['Signed in to the panel. Review sessions if this was not you.','ورود به پنل انجام شد؛ اگر شما نبودید، نشست‌ها را بررسی کنید.'],
+ 'logout':['Signed out of the panel.','خروج از پنل انجام شد.'],
+ 'mfa-enroll':['Two-step sign-in enabled. Keep recovery codes privately.','ورود دومرحله‌ای فعال شد؛ کدهای بازیابی را خصوصی نگه دارید.'],
+ 'node-connect':['Server agent connected. Tunnel health requires a separate check.','عامل سرور متصل شد؛ برای سلامت تونل بررسی جدا اجرا کنید.'],
+ 'node-disconnect':['Agent connection lost. Check this server’s agent and network.','ارتباط عامل قطع شد؛ عامل و شبکهٔ همین سرور را بررسی کنید.'],
+ 'node-enroll':['Server registered. Compare and approve its identity.','سرور ثبت شد؛ هویت آن را مقایسه و تأیید کنید.'],
+ 'node-approve':['Server identity approved. Discover its services.','هویت سرور تأیید شد؛ سرویس‌های آن را شناسایی کنید.'],
+ 'enrollment-token':['Installation token prepared. Run the shown command on the selected server.','توکن نصب آماده شد؛ دستور نمایش‌داده‌شده را روی سرور انتخابی اجرا کنید.'],
+ 'rate-limit':['Requests are temporarily limited. Wait and retry.','درخواست‌ها موقتاً محدود شده‌اند؛ کمی صبر و دوباره تلاش کنید.'],
+ 'change-apply':['A settings change started. Follow its progress.','تغییر تنظیمات آغاز شد؛ نتیجهٔ هر طرف را در عملیات ببینید.'],
+ 'change-confirm':['The settings change was confirmed. Check the recorded result.','تغییر تنظیمات تأیید شد؛ نتیجهٔ ثبت‌شده را ببینید.'],
+ 'change-rollback':['Restoration requested. Check both server results.','بازگشت درخواست شد؛ نتیجهٔ هر دو سرور را بررسی کنید.']
+};
+export function eventText(code:string){return events[code]?tr(...events[code]):explain(code)}
+export function MessageCode({code,event=false}:{code:string;event?:boolean}){return <div className="human-message"><span>{event?eventText(code):explain(code)}</span><details><summary>{tr('Technical details','جزئیات فنی')}</summary><bdi>{code}</bdi></details></div>}
 const labels:Record<string,[string,string]>={'logs.release':['Preserve current logging','حفظ وضعیت فعلی لاگ'],released:['Current state preserved','وضعیت فعلی حفظ شد'],release_pending:['Waiting to release recovery','منتظر پایان بازیابی'],release_recovery:['Preserve current peer state','حفظ وضعیت فعلی سرور'],stopped:['Intentionally stopped','توقف عمدی'],'certificate.prepare':['Prepare certificate','آماده‌سازی گواهی'],'certificate.activate':['Deploy certificate','استقرار گواهی'],'certificate.confirm':['Confirm certificate','تأیید گواهی'],partial:['Partial check','بررسی محدود'],inventory:['Discover services','کشف سرویس‌ها'],'engine.install':['Install engine','نصب موتور'],'instance.config':['Read configuration','خواندن کانفیگ'],'instance.status':['Service status','وضعیت سرویس'],'tools.status':['Server tools','ابزارهای سرور'],'logs.read':['Service logs','لاگ سرویس'],'logs.verbosity':['Temporary logging','لاگ موقت'],'recovery.policy':['Recovery policy','قانون بازیابی'],'Check tunnel':['Check tunnel','بررسی تونل'],'Check pending change':['Check pending change','بررسی تغییر در انتظار تأیید'],cancelled:['Cancelled','لغوشده'],awaiting_telegram:['Awaiting Telegram confirmation','منتظر تأیید در تلگرام'],needs_review:['Review recovery','بازگشت نیازمند بررسی'],recovery_pending:['Waiting to restore peers','منتظر اتصال برای بازگشت'],queued:['Queued','در صف'],running:['Running','در حال اجرا'],ready:['Ready for review','آمادهٔ بازبینی'],applying:['Applying','در حال اعمال'],awaiting_confirmation:['Awaiting confirmation','منتظر تأیید'],confirming:['Confirming','در حال تأیید'],reverting:['Reverting','در حال بازگشت'],reverted:['Reverted','برگشت انجام شد'],succeeded:['Finished','انجام شد'],failed:['Failed','ناموفق'],expired:['Expired','منقضی'],passed:['Passed','موفق'],unknown:['Unknown','نامعلوم'],unconfigured:['Not configured','تنظیم نشده'],not_applicable:['Not applicable','کاربرد ندارد'],stale:['Old data','دادهٔ قدیمی'],preflight:['Preflight','بررسی پیش‌نیاز'],prepare:['Backup and prepare','بکاپ و آماده‌سازی'],activate:['Activate','اعمال تغییر'],confirm:['Validate peers','بررسی دو طرف'],commit:['Commit','تأیید نهایی'],rollback:['Rollback','بازگشت'],process:['Service','سرویس'],transport:['Transport TCP','TCP بین سرورها'],application:['Application response','پاسخ کاربردی'],tls:['Transport TLS','TLS بین سرورها']};
-export function label(value:string){return labels[value]?tr(...labels[value]):value}
+export function label(value:string){return labels[value]?tr(...labels[value]):tr('Unclassified state','وضعیت نامشخص')}
+export function operationTitle(value:string){return labels[value]?label(value):/^[a-z][a-z0-9]*[._-][a-z0-9._-]+$/.test(value)?eventText(value):value}
 export function Badge({value,at}:{value?:string;at?:string}){let state=value||'unknown';if(at&&Date.now()-Date.parse(at)>180000)state='stale';return <span className={'status '+(['passed','succeeded','reverted'].includes(state)?'success':['failed'].includes(state)?'danger':['ready','awaiting_confirmation'].includes(state)?'warning':'neutral')}>{['passed','succeeded'].includes(state)?'✓':state==='failed'?'!':'○'} {label(state)}</span>}
 export function ErrorMessage({error}:{error:string}){const message=explain(error);const fallback=message===error&&!/[آ-ی]/.test(error);return error?<div className="notice danger" role="alert"><p>{fallback?tr('The operation was blocked. Review this server’s current state and the technical reason below before retrying.','عملیات متوقف شد؛ وضعیت فعلی سرور و علت فنی زیر را پیش از تلاش دوباره بررسی کنید.'):message}</p>{<details><summary>{tr('Technical details','جزئیات فنی')}</summary><bdi>{error}</bdi></details>}</div>:null}
 export function useResource(path:string,interval=15000){const[data,setData]=useState<any>(null),[error,setError]=useState(''),[generation,setGeneration]=useState(0);useEffect(()=>{let alive=true,running=false;const load=async()=>{if(running||document.visibilityState!=='visible')return;running=true;try{const v=await request(path);if(alive){setData(v);setError('')}}catch(e){if(alive)setError((e as Error).message)}finally{running=false}};load();const timer=setInterval(load,interval);return()=>{alive=false;clearInterval(timer)}},[path,interval,generation]);return {data,error,reload:()=>setGeneration(x=>x+1)}}
@@ -100,4 +124,4 @@ export function Operation({id,nodes=[],done}:{id:string;nodes?:any[];done?:(oper
  {check&&<Operation key={check} id={check} nodes={nodes}/>} {op.result&&Object.keys(op.result).length>0&&<JsonDetail value={op.result}/>}
  </section>
 }
-export function OperationsPage({nodes}:{nodes:any[]}){const{data,error}=useResource('operations',4000);const[selected,setSelected]=useState(''),[background,setBackground]=useState(false);return <><ErrorMessage error={error}/><label className="checkbox"><input type="checkbox" checked={background} onChange={e=>setBackground(e.target.checked)}/>{tr('Include automatic monitoring','نمایش مانیتورینگ خودکار')}</label><section><div className="tablewrap"><table><thead><tr>{[tr('Operation','عملیات'),tr('Status','وضعیت'),tr('Time','زمان'),tr('Result','نتیجه')].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{data?.filter((x:any)=>background||x.kind!=='tunnel-check').map((x:any)=><tr key={x.id}><td><button className="link" onClick={()=>setSelected(x.id)}>{x.name}</button></td><td><Badge value={x.phase==='succeeded'?(x.check_status||x.phase):x.phase}/></td><td>{stamp(x.updated)}</td><td>{explain(x.error)}</td></tr>)}</tbody></table></div>{data?.length===0&&<p className="empty">{tr('No operations yet.','هنوز عملیاتی ثبت نشده است.')}</p>}</section>{selected&&<Operation key={selected} id={selected} nodes={nodes}/>}</>}
+export function OperationsPage({nodes}:{nodes:any[]}){const{data,error}=useResource('operations',4000);const[selected,setSelected]=useState(''),[background,setBackground]=useState(false);return <><ErrorMessage error={error}/><label className="checkbox"><input type="checkbox" checked={background} onChange={e=>setBackground(e.target.checked)}/>{tr('Include automatic monitoring','نمایش مانیتورینگ خودکار')}</label><section><div className="tablewrap"><table><thead><tr>{[tr('Operation','عملیات'),tr('Status','وضعیت'),tr('Time','زمان'),tr('Result','نتیجه')].map(x=><th key={x}>{x}</th>)}</tr></thead><tbody>{data?.filter((x:any)=>background||x.kind!=='tunnel-check').map((x:any)=><tr key={x.id}><td><button className="link" onClick={()=>setSelected(x.id)}>{operationTitle(x.name)}</button></td><td><Badge value={x.phase==='succeeded'?(x.check_status||x.phase):x.phase}/></td><td>{stamp(x.updated)}</td><td>{explain(x.error)}</td></tr>)}</tbody></table></div>{data?.length===0&&<p className="empty">{tr('No operations yet.','هنوز عملیاتی ثبت نشده است.')}</p>}</section>{selected&&<Operation key={selected} id={selected} nodes={nodes}/>}</>}

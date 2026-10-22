@@ -47,6 +47,9 @@ func setupNode(ctx context.Context, c config.Config, yes, reenroll bool) (err er
 	if os.Geteuid() != 0 {
 		return errors.New("native node setup requires sudo/root")
 	}
+	if e := nodeops.New(c).PendingRollback(); e != nil {
+		return errors.New("finish or revert pending local changes before updating the agent; existing rollback executable and services were preserved")
+	}
 	rollback, e := nodeRollback(c, wasInstalled)
 	if e != nil {
 		return e

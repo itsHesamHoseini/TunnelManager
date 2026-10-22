@@ -1,4 +1,27 @@
+> Scope update 2026-10-23: the second engine was removed by explicit owner request. Earlier multi-engine requirements/results below are historical; they do not qualify the current Backhaul-only revision. Current acceptance: docs/REVISION-2.md.
+
 # Acceptance register
+## Current correction acceptance (owner v2, 2026-10-23)
+
+Previous PASS entries below are historical release-scoped evidence and do not qualify the requested correction. [Revision register](REVISION-2.md) is the current WP0-WP9 status.
+
+| ID | Required repeatable acceptance | State |
+|---|---|---|
+| V2-00 | Chrome before/after at 1448x1086, 1920 and mobile: stale/disconnected/missing/API failure neutral resources, shared counts, threshold boundaries, Persian time/message/next action; Go request-id equality | PENDING |
+| V2-01 | Backhaul-only source scan/allowlist, backed-up mixed DB migration, no host writes, unknown listener port rejection, TCP/WSS native and Chrome | PENDING |
+| V2-02 | Simple two-peer port/backend/token/transport edit with honest click counts, advanced/raw preserved, native traffic/preflight/partial failure/manual+timer rollback, Chrome captures and recording | Field group approved; implementation/evidence PENDING |
+| V2-03 | Classified adoption ratios and native discover/adopt/edit/revert without rewrite on adoption; owner corpus coverage | PENDING real redacted corpus |
+| V2-04 | Six main destinations, complete old-to-new functionality map and legacy routing browser checks | PENDING owner merge confirmation |
+| V2-05 | Action-first overview and server table without desktop overflow/truncated headers at >=1280 | PENDING |
+| V2-06 | Attention ordering, honest interface scope, layered timestamps and gapped 24h/7d history | PENDING |
+| V2-07 | Limited through-tunnel TCP/TLS check with explicit non-VLESS scope; VLESS proposal only | PENDING |
+| V2-08 | Copyable bootstrap, waiting/reconnect progress, full fingerprint plus comparison aid; optional SSH proposal only | PENDING |
+| V2-09 | Only reproduced maintenance bugs fixed with regression evidence; Persian form copy inventory | PENDING |
+
+Retired-engine portions of M4-01, M4-04, M5-01, M5-03 and C12/C17/C20 are **REMOVED BY OWNER (2026-10-23)**; Backhaul portions and safety guarantees remain required. Their old IDs/results are retained below as historical evidence, not silently deleted.
+
+## Historical 0.7.0 and earlier evidence
+
 | ID | Requirement | Evidence/status |
 |---|---|---|
 | M1-01 | Neutral tracked content and full history | PASS: neutrality + gitleaks directory/full history before commits; native CI |
@@ -26,10 +49,10 @@ Evidence index and operator checks: [M1–M3 report](M1-M3-REPORT.md). Live ACME
 ## Completion register (authorized 2026-10-16)
 | ID | Acceptance test | Status |
 |---|---|---|
-| M4-01 | Verify official pinned Backhaul/Rathole artifacts and actual engine configs on Linux; unsupported versions are read-only | PASS native89d9960: official pinned Rathole0.5.0/Backhaul0.7.2; actual Noise/TLS/TCP/WSS HTTP. JSON integer/TOML regression fixed and tested. Unsupported versions/configs read-only. |
+| M4-01 | Verify official pinned Backhaul artifacts and actual engine configs on Linux; unsupported versions are read-only | PASS native89d9960: official pinned retired engine (removed by owner)0.5.0/Backhaul0.7.2; actual Noise/TLS/TCP/WSS HTTP. JSON integer/TOML regression fixed and tested. Unsupported versions/configs read-only. |
 | M4-02 | Persist typed jobs/results; restart controller/reconnect agent without duplicate execution; reject expired/unknown actions | PASS scoped: real PG immutable encrypted jobs; native separate CLI processes/receipts and Linux38923606607 executor reconstruction without duplicate HTTP, changed/expired retry rejection. Forced OS controller kill mid-mutation remains separately untested. |
 | M4-03 | Discover existing instances/routes without writes, evidence-pair peers, manually import ambiguous/shared routes, explicit adoption | PASS native38917694925: discovery/import/adoption without PID changes; standalone unmatched foreign service stop/start with original-unit removal guard; shared listener/two distinct clients on same node imported and edited. Local reimport/CAS tests pass. |
-| M4-04 | Create both engines between two nodes; render/validate/edit TOML; keep three endpoint concepts and direction distinct | PASS native browser: create/preflight/apply/check/confirm actual Rathole Noise/TLS and Backhaul TCP/WSS; user-port edit, form/raw contracts and direction shown separately. |
+| M4-04 | Create both engines between two nodes; render/validate/edit TOML; keep three endpoint concepts and direction distinct | PASS native browser: create/preflight/apply/check/confirm actual retired engine (removed by owner) Noise/TLS and Backhaul TCP/WSS; user-port edit, form/raw contracts and direction shown separately. |
 | M4-05 | Reject occupied IPv4/IPv6/Docker ports, pending reservations, incompatible config/version/cert and concurrent/drift writes | PASS: actual occupied listener rejection, concurrent PG reservations, config/identity/path bounds, drift protection; IPv4/IPv6/Docker reservation parser coverage is a unit test, not a Docker-NAT race stress test. |
 | M4-06 | Preview redacted diff and all affected routes; prepare both nodes; native local rollback on failure/disconnect/timeout; explicit confirm | PASS native89d9960: both peers prepare backups/local systemd timers, actual paths verified, independent90s timeout restoration without executor; manual drift blocks overwrite and explicit release preserves current files/backups. |
 | M4-07 | Start/stop/restart/reload/disable/remove/clone/bulk/version-revert affect only selected owned instances; shared route impact visible | PASS native: shared multi-client sequential edits preserve both routes/scoped options/per-instance hashes; clone/version/batch/start/stop/restart/disable/remove. Original foreign-unit removal is intentionally blocked; revoke preserves files. |

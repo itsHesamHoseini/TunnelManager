@@ -167,8 +167,8 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		t.Fatal("native operation timeout")
 	}
 	for _, node := range ids {
-		for _, engine := range []string{"rathole", "backhaul"} {
-			version := map[string]string{"rathole": "0.5.0", "backhaul": "0.7.2"}[engine]
+		for _, engine := range []string{"backhaul"} {
+			version := "0.7.2"
 			body, _ := json.Marshal(map[string]string{"Engine": engine, "Version": version})
 			id, e := s.newJob(ctx, "install_"+node+"_"+engine, "node", node, "Install", JobPayload{Node: node, Kind: "engine.install", Payload: body})
 			if e != nil {
@@ -203,7 +203,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	}
 	t.Log(string(out))
 	batchRevisions := map[string]int64{}
-	for _, name := range []string{"Synthetic native rathole noise", "Synthetic native backhaul tcp"} {
+	for _, name := range []string{"Synthetic native backhaul tcp"} {
 		var id string
 		var rev int64
 		if s.DB.QueryRow(ctx, "SELECT id,revision FROM tunnels WHERE name=$1", name).Scan(&id, &rev) != nil {
@@ -256,22 +256,19 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		return target
 	}
 	var originalID string
-	s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native rathole noise'").Scan(&originalID)
+	s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native backhaul tcp'").Scan(&originalID)
 	original, rev, _, e := s.readTunnel(ctx, originalID)
 	if e != nil {
 		t.Fatal(e)
 	}
 	for _, version := range []int64{1, 2} {
-		applyPlan(map[string]any{"RequestKey": fmt.Sprintf("native_version_%d", version), "Tunnel": originalID, "Name": "Synthetic native rathole noise", "Spec": original.Spec, "ExpectedRevision": rev, "RevertRevision": version})
+		applyPlan(map[string]any{"RequestKey": fmt.Sprintf("native_version_%d", version), "Tunnel": originalID, "Name": "Synthetic native backhaul tcp", "Spec": original.Spec, "ExpectedRevision": rev, "RevertRevision": version})
 		_, rev, _, _ = s.readTunnel(ctx, originalID)
 	}
 	clone := original.Spec
 	clone.Token = ""
-	clone.NoisePrivate = ""
-	clone.NoisePublic = ""
 	clone.Routes = append([]engine.Route{}, clone.Routes...)
 	for i := range clone.Routes {
-		clone.Routes[i].Token = ""
 		clone.Routes[i].User.Port += 200
 	}
 	clone.TransportBind.Port = 28200
@@ -281,7 +278,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	clone.Application = &probe
 	cloneID := applyPlan(map[string]any{"RequestKey": "native_clone", "Name": "Synthetic cloned route", "Spec": clone})
 	cloned, cloneRevision, _, e := s.readTunnel(ctx, cloneID)
-	if e != nil || cloned.Spec.Token == original.Spec.Token || cloned.Spec.NoisePublic == original.Spec.NoisePublic {
+	if e != nil || cloned.Spec.Token == original.Spec.Token {
 		t.Fatal("clone reused private authentication")
 	}
 	for _, action := range []string{"disable", "start", "remove"} {
@@ -317,7 +314,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		}
 	}
 	writeFixture("/etc/tunnelmanager-lab-orphan.toml", orphanRaw)
-	writeFixture("/etc/systemd/system/synthetic-orphan.service", "[Unit]\nDescription=Synthetic unpaired existing engine\n[Service]\nExecStart=/opt/tunnelmanager/engines/rathole/0.5.0/rathole /etc/tunnelmanager-lab-orphan.toml\nRestart=no\n")
+	writeFixture("/etc/systemd/system/synthetic-orphan.service", "[Unit]\nDescription=Synthetic unpaired existing engine\n[Service]\nExecStart=/opt/tunnelmanager/engines/backhaul/0.7.2/backhaul -c /etc/tunnelmanager-lab-orphan.toml\nRestart=no\n")
 	run("exec", nodes[1], "systemctl", "daemon-reload")
 	run("exec", nodes[1], "systemctl", "start", "synthetic-orphan")
 	beforeOrphan := string(run("exec", nodes[1], "systemctl", "show", "synthetic-orphan", "--property=MainPID", "--value"))
@@ -400,7 +397,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		}
 		path := "/etc/" + unit + ".toml"
 		writeAt(node, path, raw)
-		writeAt(node, "/etc/systemd/system/"+unit+".service", "[Unit]\nDescription=Synthetic existing shared instance\n[Service]\nExecStart=/opt/tunnelmanager/engines/rathole/0.5.0/rathole "+path+"\nRestart=no\n")
+		writeAt(node, "/etc/systemd/system/"+unit+".service", "[Unit]\nDescription=Synthetic existing shared instance\n[Service]\nExecStart=/opt/tunnelmanager/engines/backhaul/0.7.2/backhaul -c "+path+"\nRestart=no\n")
 		run("exec", node, "systemctl", "daemon-reload")
 		run("exec", node, "systemctl", "start", unit)
 	}
@@ -457,7 +454,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		record.Spec.Routes[0].User.Port = 24845 + index
+		record.Spec.Routes[index].User.Port = 24845 + index
 		record.Spec.Application = &engine.Probe{Kind: "http", Endpoint: engine.Endpoint{Host: ips[0], Port: 24845 + index}, Path: "/probe", Expected: "synthetic-native-response"}
 		applyPlan(map[string]any{"RequestKey": fmt.Sprintf("native_shared_edit_%d", index), "Tunnel": id, "Name": []string{"Synthetic shared first", "Synthetic shared second"}[index], "Spec": record.Spec, "ExpectedRevision": revision})
 		for _, unit := range []string{"synthetic-shared-server", "synthetic-shared-first", "synthetic-shared-second"} {
@@ -479,7 +476,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	// Renew and deploy a new identity to every real TLS consumer. A stopped
 	// consumer must remain stopped throughout coordinated certificate rotation.
 	var tlsTunnel string
-	s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native rathole tls'").Scan(&tlsTunnel)
+	s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native backhaul wss'").Scan(&tlsTunnel)
 	tlsRecord, _, _, e := s.readTunnel(ctx, tlsTunnel)
 	if e != nil {
 		t.Fatal(e)
@@ -516,7 +513,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	if strings.TrimSpace(string(active)) != "inactive" {
 		t.Fatal("certificate rotation overrode intentional stop")
 	}
-	run("exec", nodes[1], "sh", "-c", "test ! -e /etc/tunnelmanager-agent/certificates/native_tls/key.pem && test ! -e /etc/tunnelmanager-agent/certificates/native_tls/identity.pfx")
+	run("exec", nodes[1], "sh", "-c", "test ! -e /etc/tunnelmanager-agent/certificates/native_tls/key.pem")
 	intent("start", "start_after_renewal")
 	for _, p := range []string{"24463", "24473"} {
 		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+p+"/probe',timeout=5).read()")
@@ -557,7 +554,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		}
 		wait(job)
 	}
-	certificateStep("prepare", nodeops.Certificate{Domain: candidate.Domain, Cert: candidate.Cert, Key: candidate.Key, PKCS12Password: candidate.PKCS12Password, ExpectedHash: previousHash, Instances: consumers})
+	certificateStep("prepare", nodeops.Certificate{Domain: candidate.Domain, Cert: candidate.Cert, Key: candidate.Key, ExpectedHash: previousHash, Instances: consumers})
 	certificateStep("activate", nodeops.Certificate{Deadline: time.Now().Add(30 * time.Second)})
 	run("exec", nodes[0], "systemctl", "stop", "tunnelmanager-agent")
 	time.Sleep(35 * time.Second)
@@ -574,8 +571,8 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	t.Log("Actual listener certificate mutation reverted through an independent systemd timer with its agent stopped; real TLS/WSS HTTP paths recovered")
 	// A real per-service RAM policy continues while the control route is blackholed.
 	var tunnelID string
-	if s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native rathole noise'").Scan(&tunnelID) != nil {
-		t.Fatal("native Noise tunnel missing")
+	if s.DB.QueryRow(ctx, "SELECT id FROM tunnels WHERE name='Synthetic native backhaul tcp'").Scan(&tunnelID) != nil {
+		t.Fatal("native Backhaul tunnel missing")
 	}
 	record, _, _, e := s.readTunnel(ctx, tunnelID)
 	if e != nil {

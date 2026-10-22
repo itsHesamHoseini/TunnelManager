@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -23,6 +22,9 @@ type Parsed struct {
 func text(m map[string]any, k string) string          { s, _ := m[k].(string); return s }
 func table(m map[string]any, k string) map[string]any { v, _ := m[k].(map[string]any); return v }
 func ParseConfiguration(raw, name string) (Parsed, error) {
+	if name != "backhaul" {
+		return Parsed{}, errors.New("unsupported_engine")
+	}
 	m, e := Parse(raw)
 	if e != nil {
 		return Parsed{}, e
@@ -45,54 +47,25 @@ func ParseConfiguration(raw, name string) (Parsed, error) {
 	} else {
 		p.Options = opts
 	}
-	if name == "backhaul" {
-		p.Transport = text(side, "transport")
-		p.Token = text(side, "token")
-		if ports, ok := side["ports"].([]any); ok {
-			for n, v := range ports {
-				s, ok := v.(string)
-				if !ok {
-					p.Reason = "invalid port mapping"
-					continue
-				}
-				routes, e := parseBackhaulMapping(s, n)
-				if e != nil {
-					p.Reason = "advanced/range mapping requires explicit normalized import"
-					continue
-				}
-				p.Routes = append(p.Routes, routes...)
-			}
-		}
-	} else {
-		p.Token = text(side, "default_token")
-		p.Transport = text(table(side, "transport"), "type")
-		if p.Transport == "" {
-			p.Transport = "tcp"
-		}
-		services := table(side, "services")
-		keys := []string{}
-		for key := range services {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			v := table(services, key)
-			r := Route{ID: key, Name: key, Protocol: text(v, "type")}
-			if r.Protocol == "" {
-				r.Protocol = "tcp"
-			}
-			if role == "server" {
-				r.User, e = ParseEndpoint(text(v, "bind_addr"))
-			} else {
-				r.Backend, e = ParseEndpoint(text(v, "local_addr"))
-			}
-			if e != nil {
-				p.Reason = "invalid service endpoint"
+
+	p.Transport = text(side, "transport")
+	p.Token = text(side, "token")
+	if ports, ok := side["ports"].([]any); ok {
+		for n, v := range ports {
+			s, ok := v.(string)
+			if !ok {
+				p.Reason = "invalid port mapping"
 				continue
 			}
-			p.Routes = append(p.Routes, r)
+			routes, e := parseBackhaulMapping(s, n)
+			if e != nil {
+				p.Reason = "advanced/range mapping requires explicit normalized import"
+				continue
+			}
+			p.Routes = append(p.Routes, routes...)
 		}
 	}
+
 	if len(p.Routes) > 200 {
 		p.Routes = p.Routes[:200]
 		p.Reason = "route list limited to 200"

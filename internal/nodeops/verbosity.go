@@ -8,7 +8,6 @@ import (
 	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
 	"github.com/pelletier/go-toml/v2"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -67,34 +66,24 @@ func (r *Runtime) verbosity(ctx context.Context, b []byte) (any, error) {
 		return nil, errors.New("config_revision_conflict")
 	}
 	j := logTransaction{ID: id, Instance: v, Deadline: time.Now().Add(time.Duration(q.Seconds) * time.Second), Phase: "prepared", Active: isState(ctx, "is-active", v.Unit, "active")}
-	if v.Engine == "backhaul" {
-		m, e := engine.Parse(raw)
-		if e != nil {
-			return nil, e
-		}
-		side, _ := m[v.Role].(map[string]any)
-		if side == nil {
-			return nil, errors.New("config_role_missing")
-		}
-		side["log_level"] = q.Level
-		j.New, e = toml.Marshal(m)
-		if e != nil {
-			return nil, e
-		}
-		j.Path = v.Path
-		j.Old = []byte(raw)
-		j.Existed = true
-	} else if v.Engine == "rathole" {
-		j.Path = filepath.Join("/etc/systemd/system", v.Unit+".d", "95-tunnelmanager-logging.conf")
-		j.Old, e = os.ReadFile(j.Path)
-		j.Existed = e == nil
-		if e != nil && !os.IsNotExist(e) {
-			return nil, e
-		}
-		j.New = []byte("[Service]\nEnvironment=RUST_LOG=" + q.Level + "\n")
-	} else {
-		return nil, errors.New("unsupported_logging_engine")
+
+	m, e := engine.Parse(raw)
+	if e != nil {
+		return nil, e
 	}
+	side, _ := m[v.Role].(map[string]any)
+	if side == nil {
+		return nil, errors.New("config_role_missing")
+	}
+	side["log_level"] = q.Level
+	j.New, e = toml.Marshal(m)
+	if e != nil {
+		return nil, e
+	}
+	j.Path = v.Path
+	j.Old = []byte(raw)
+	j.Existed = true
+
 	j.Hash = engine.Digest(j.New)
 	if e = writeJSON(r.file("log-transactions", id+".json"), j); e != nil {
 		return nil, e
@@ -112,9 +101,9 @@ func (r *Runtime) verbosity(ctx context.Context, b []byte) (any, error) {
 	if _, e = run(ctx, "systemctl", "daemon-reload"); e != nil {
 		return nil, e
 	}
-	if v.Engine == "backhaul" {
-		v.Hash = j.Hash
-	}
+
+	v.Hash = j.Hash
+
 	v.Epoch = id
 	definition, e := run(ctx, "systemctl", "cat", "--", v.Unit)
 	if e != nil {

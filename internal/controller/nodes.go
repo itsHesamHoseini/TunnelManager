@@ -91,7 +91,9 @@ func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 		var revision int64
 		var data, meta, pub []byte
 		rows.Scan(&id, &n, &role, &a, &seen, &reconnects, &data, &meta, &pub, &revision)
-		items = append(items, map[string]any{"id": id, "name": n, "role": role, "approved": a, "connected": s.isConnected(id), "seen": seen, "reconnects": reconnects, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "fingerprint": secure.Fingerprint(pub), "revision": revision, "fresh": seen != nil && time.Since(*seen) < 90*time.Second})
+		connected := s.isConnected(id)
+		online, fresh, reason := observationState(a, connected, seen, data, time.Now())
+		items = append(items, map[string]any{"id": id, "name": n, "role": role, "approved": a, "connected": connected, "online": online, "observation_reason": reason, "seen": seen, "reconnects": reconnects, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "fingerprint": secure.Fingerprint(pub), "revision": revision, "fresh": fresh})
 	}
 	write(w, items)
 }
@@ -107,7 +109,9 @@ func (s *Server) nodeDetail(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "node_missing", "Node not found.", "سرور پیدا نشد.")
 		return
 	}
-	write(w, map[string]any{"id": id, "name": name, "role": role, "approved": approved, "connected": s.isConnected(id), "seen": seen, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "reconnects": reconnects, "fingerprint": secure.Fingerprint(pub), "revision": revision, "usage": s.usage(r.Context(), id), "fresh": seen != nil && time.Since(*seen) < 90*time.Second})
+	connected := s.isConnected(id)
+	online, fresh, reason := observationState(approved, connected, seen, data, time.Now())
+	write(w, map[string]any{"id": id, "name": name, "role": role, "approved": approved, "connected": connected, "online": online, "observation_reason": reason, "seen": seen, "telemetry": json.RawMessage(data), "metadata": json.RawMessage(meta), "reconnects": reconnects, "fingerprint": secure.Fingerprint(pub), "revision": revision, "usage": s.usage(r.Context(), id), "fresh": fresh})
 }
 func (s *Server) isConnected(id string) bool {
 	s.mu.Lock()

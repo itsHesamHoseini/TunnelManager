@@ -28,7 +28,7 @@ func TestOperationalPagesInBrowser(t *testing.T) {
 	}
 	for i, status := range []string{"passed", "failed", "unknown", "stale"} {
 		id := "synthetic_" + status
-		spec := engine.Spec{Engine: "rathole", Version: "0.5.0", Transport: "noise", Listener: "listener", Dialer: "dialer", TransportBind: engine.Endpoint{Host: "0.0.0.0", Port: 28100 + i}, TransportRemote: engine.Endpoint{Host: "192.0.2.10", Port: 28100 + i}, Routes: []engine.Route{{ID: "route1", Name: "Synthetic route", User: engine.Endpoint{Host: "0.0.0.0", Port: 24443 + i}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}}}
+		spec := engine.Spec{Engine: "backhaul", Version: "0.7.2", Transport: "tcp", Listener: "listener", Dialer: "dialer", TransportBind: engine.Endpoint{Host: "0.0.0.0", Port: 28100 + i}, TransportRemote: engine.Endpoint{Host: "192.0.2.10", Port: 28100 + i}, Routes: []engine.Route{{ID: "route1", Name: "Synthetic route", User: engine.Endpoint{Host: "0.0.0.0", Port: 24443 + i}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}}}
 		engine.GenerateSecrets(&spec)
 		rec := TunnelRecord{Spec: spec, Instances: map[string]string{"listener": "synthetic_server", "dialer": "synthetic_client"}, Hashes: map[string]string{"listener": "hash1", "dialer": "hash2"}}
 		cipher, _ := s.sealValue("tunnel:"+id, rec)
@@ -40,14 +40,14 @@ func TestOperationalPagesInBrowser(t *testing.T) {
 		health, _ := json.Marshal(map[string]any{"at": at, "process": []map[string]any{{"status": status}, {"status": status}}, "transport": map[string]any{"status": status, "source": "dialer"}, "application": map[string]any{"status": "unconfigured"}})
 		s.DB.Exec(ctx, "INSERT INTO tunnels(id,name,cipher,managed,health)VALUES($1,$2,$3,true,$4)", id, "Synthetic "+id, cipher, health)
 	}
-	inventory, _ := json.Marshal(map[string]any{"instances": []nodeops.Discovered{{Instance: nodeops.Instance{ID: "synthetic_server", Name: "Synthetic shared service", Unit: "rathole-synthetic.service", Engine: "rathole", Version: "0.5.0", Role: "server", Managed: true}, Parsed: engine.Parsed{Role: "server", Transport: "noise", Bind: "0.0.0.0:28100"}, Configuration: "[server]\nbind_addr='0.0.0.0:28100'\ndefault_token='[redacted]'\n", Active: "active"}}})
+	inventory, _ := json.Marshal(map[string]any{"instances": []nodeops.Discovered{{Instance: nodeops.Instance{ID: "synthetic_server", Name: "Synthetic shared service", Unit: "backhaul-synthetic.service", Engine: "backhaul", Version: "0.7.2", Role: "server", Managed: true}, Parsed: engine.Parsed{Role: "server", Transport: "tcp", Bind: "0.0.0.0:28100"}, Configuration: "[server]\nbind_addr='0.0.0.0:28100'\ntoken='[redacted]'\n", Active: "active"}}})
 	s.DB.Exec(ctx, "UPDATE nodes SET inventory=$1,inventory_at=now() WHERE id='listener'", inventory)
 	// Reproduce same-named service/linked tunnel and peer ambiguity in the fast
 	// browser suite; the native tests reuse the exact same selection helpers.
 	s.DB.Exec(ctx, "UPDATE tunnels SET name='Synthetic shared service' WHERE id='synthetic_unknown'")
 	s.DB.Exec(ctx, "UPDATE nodes SET inventory=$1,inventory_at=now() WHERE id='dialer'", inventory)
 	configurationJob, _ := s.newJob(ctx, "fixture_config", "node", "listener", "Fixture redacted configuration", JobPayload{Node: "listener", Kind: "instance.config"})
-	configurationResult, _ := json.Marshal(map[string]any{"configuration": "[server]\nbind_addr='0.0.0.0:28100'\ndefault_token='[redacted]'\n"})
+	configurationResult, _ := json.Marshal(map[string]any{"configuration": "[server]\nbind_addr='0.0.0.0:28100'\ntoken='[redacted]'\n"})
 	s.DB.Exec(ctx, "UPDATE operations SET phase='succeeded',result=$1 WHERE id=$2", configurationResult, configurationJob)
 	diagnostic, _ := s.newJob(ctx, "fixture_diagnostic", "node", "listener", "Fixture diagnostic failed", JobPayload{Node: "listener", Kind: "diagnostic", Payload: json.RawMessage(`{"kind":"tcp","endpoint":{"host":"192.0.2.10","port":443}}`)})
 	result, _ := json.Marshal(map[string]any{"status": "failed", "kind": "tcp", "target": "192.0.2.10:443", "at": time.Now(), "code": "connection_or_protocol_check_failed"})

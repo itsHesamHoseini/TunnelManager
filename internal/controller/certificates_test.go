@@ -25,7 +25,7 @@ func TestCertificateIssueAndEncryptedPersistence(t *testing.T) {
 		t.Fatal("certificate issuance not completed")
 	}
 	got, rev, e := s.readCertificate(ctx, "cert1")
-	if e != nil || rev != 1 || got.Key == "" || got.PKCS12Password == "" {
+	if e != nil || rev != 1 || got.Key == "" {
 		t.Fatal("protected certificate absent")
 	}
 	leaf, e := validateCertificate(got)
@@ -34,7 +34,7 @@ func TestCertificateIssueAndEncryptedPersistence(t *testing.T) {
 	}
 	var cipher []byte
 	s.DB.QueryRow(ctx, "SELECT cipher FROM certificates WHERE id='cert1'").Scan(&cipher)
-	if bytes.Contains(cipher, []byte(got.Key)) || bytes.Contains(cipher, []byte(got.PKCS12Password)) {
+	if bytes.Contains(cipher, []byte(got.Key)) {
 		t.Fatal("private certificate material stored in plaintext")
 	}
 	got.Domain = "different.example.com"
@@ -50,7 +50,7 @@ func TestCertificateIssueAndEncryptedPersistence(t *testing.T) {
 	}
 }
 
-func TestCertificatePolicyIsIndependentCASAndRenewalKeepsIdentityPassword(t *testing.T) {
+func TestCertificatePolicyIsIndependentCASAndRenewalPreservesPolicy(t *testing.T) {
 	s, _, _ := testServer(t)
 	ctx := context.Background()
 	payload, _ := json.Marshal(CertificateRequest{Name: "Synthetic TLS", Domain: "transport.example.com", Method: "self-signed", Days: 3})
@@ -75,12 +75,11 @@ func TestCertificatePolicyIsIndependentCASAndRenewalKeepsIdentityPassword(t *tes
 		t.Fatal("policy changed issued revision or key")
 	}
 	q.AutoDeploy = false
-	q.PKCS12Password = ""
 	payload, _ = json.Marshal(q)
 	job, _ := s.newJob(ctx, "policy_cert_renew", "certificate", "policy_cert", "Renew", JobPayload{Kind: "issue", Certificate: "policy_cert", ExpectedRevision: rev, Payload: payload})
 	s.processJob(ctx, job)
 	renewed, current, e := s.readCertificate(ctx, "policy_cert")
-	if e != nil || current != rev+1 || !renewed.AutoDeploy || renewed.PKCS12Password != original.PKCS12Password || renewed.Cert == original.Cert {
+	if e != nil || current != rev+1 || !renewed.AutoDeploy || renewed.Cert == original.Cert {
 		t.Fatal("renewal changed policy/password or did not issue new certificate")
 	}
 }
