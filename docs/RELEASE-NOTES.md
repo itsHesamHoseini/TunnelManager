@@ -2,6 +2,7 @@
 Compact operational overview, routes, servers, services and discovery workspaces follow the accepted reference design. Contextual actions lead directly to real instance configuration/logs/lifecycle tools. Selected-node discovery has per-job results; ambiguous peers remain available for manual import. Bounded hostname correlation creates unique observation records without adopting services. Independent endpoints, reverse direction, freshness and application-check scope remain explicit.
 
 Built with Go 1.27.3 to address GO-2026-6809 in certificate verification. Existing encryption, identity verification, durable operations, drift/port checks and independent local rollback are preserved. No extra runtime service is added. Generated topology background and bundled licensed icons/flags are documented in THIRD-PARTY.md. Private reference data is excluded.
+Configuration previews also mask secret-named fields inside nested unsupported TOML array tables and inline arrays, retaining non-sensitive evidence. Duplicate service/tunnel/peer names are covered by shared fixture/native browser regression checks.
 
 Integrated two-node native Linux operations: pinned Backhaul/Rathole installation, discovery/import/adoption, configuration plans, shared-service impact, local commit/confirm rollback, service/batch actions, certificate lifecycle, scoped diagnostics/logs and persistent recovery/monitoring.
 

@@ -10,7 +10,7 @@ curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.
 less install.sh
 sudo sh install.sh setup --with-local-node
 ```
-The bootstrap verifies SHA256. The wizard previews changes, domain/IP, port (9443), TLS and account setup. Docker installation is explicit. Enroll TOTP personally and save recovery codes. [v0.6.0 downloads](https://github.com/itsHesamHoseini/TunnelManager/releases/tag/v0.6.0) are published and bootstrap-tested. See [release limits](docs/RELEASE-NOTES.md). To build a reviewed checkout:
+The bootstrap verifies SHA256. The wizard previews changes, domain/IP, port (9443), TLS and account setup. Docker installation is explicit. Enroll TOTP personally and save recovery codes. [v0.7.0 downloads](https://github.com/itsHesamHoseini/TunnelManager/releases/tag/v0.7.0) are published and bootstrap-tested. See [console qualification](docs/CONSOLE-0.7-REPORT.md) and [release limits](docs/RELEASE-NOTES.md). To build a reviewed checkout:
 ```sh
 npm ci --prefix web
 npm run build --prefix web
@@ -45,7 +45,7 @@ node scripts/neutrality.mjs && node scripts/secrets.mjs
 ```
 Set TEST_DATABASE_URL to isolated PostgreSQL for integration tests; TUNNELMANAGER_BROWSER_TESTS=1 enables real Chrome fixtures. Native CI uses disposable Linux/systemd peers and actual engines, including failure paths; never production faults. The acceptance register distinguishes native, browser, fixture and untested evidence.
 
-![Persian workspace; clearly synthetic fixture data](docs/evidence/m4-tunnels-fixture-fa.png)
+![Persian operational console; clearly synthetic fixture data](docs/evidence/console-overview-fixture-fa.png)
 
 ## Architecture and credits
 One Go executable embeds UI and installer. PostgreSQL holds authority/history/jobs; bounded workers and native agents avoid a separate queue/collector. CSS tokens and small React components preserve the calm visual system without a component/chart framework. The terminal wizard supports masked inputs, Persian/English and NO_COLOR without a TUI dependency.
