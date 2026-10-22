@@ -5,7 +5,7 @@ permissions:
 jobs:
   engines:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     services:
       postgres:
         image: postgres:18

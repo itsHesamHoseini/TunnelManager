@@ -42,6 +42,13 @@ func TestOperationalPagesInBrowser(t *testing.T) {
 	}
 	inventory, _ := json.Marshal(map[string]any{"instances": []nodeops.Discovered{{Instance: nodeops.Instance{ID: "synthetic_server", Name: "Synthetic shared service", Unit: "rathole-synthetic.service", Engine: "rathole", Version: "0.5.0", Role: "server", Managed: true}, Parsed: engine.Parsed{Role: "server", Transport: "noise", Bind: "0.0.0.0:28100"}, Configuration: "[server]\nbind_addr='0.0.0.0:28100'\ndefault_token='[redacted]'\n", Active: "active"}}})
 	s.DB.Exec(ctx, "UPDATE nodes SET inventory=$1,inventory_at=now() WHERE id='listener'", inventory)
+	// Reproduce same-named service/linked tunnel and peer ambiguity in the fast
+	// browser suite; the native tests reuse the exact same selection helpers.
+	s.DB.Exec(ctx, "UPDATE tunnels SET name='Synthetic shared service' WHERE id='synthetic_unknown'")
+	s.DB.Exec(ctx, "UPDATE nodes SET inventory=$1,inventory_at=now() WHERE id='dialer'", inventory)
+	configurationJob, _ := s.newJob(ctx, "fixture_config", "node", "listener", "Fixture redacted configuration", JobPayload{Node: "listener", Kind: "instance.config"})
+	configurationResult, _ := json.Marshal(map[string]any{"configuration": "[server]\nbind_addr='0.0.0.0:28100'\ndefault_token='[redacted]'\n"})
+	s.DB.Exec(ctx, "UPDATE operations SET phase='succeeded',result=$1 WHERE id=$2", configurationResult, configurationJob)
 	diagnostic, _ := s.newJob(ctx, "fixture_diagnostic", "node", "listener", "Fixture diagnostic failed", JobPayload{Node: "listener", Kind: "diagnostic", Payload: json.RawMessage(`{"kind":"tcp","endpoint":{"host":"192.0.2.10","port":443}}`)})
 	result, _ := json.Marshal(map[string]any{"status": "failed", "kind": "tcp", "target": "192.0.2.10:443", "at": time.Now(), "code": "connection_or_protocol_check_failed"})
 	s.DB.Exec(ctx, "UPDATE operations SET phase='succeeded',result=$1 WHERE id=$2", result, diagnostic)

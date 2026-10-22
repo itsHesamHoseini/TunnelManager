@@ -1,5 +1,6 @@
 import {chromium}from'playwright';
 import fs from'node:fs';
+import {openConsoleService,displayedConfiguration} from './console-selectors.mjs';
 const fixture=JSON.parse(fs.readFileSync(process.env.TUNNELMANAGER_NATIVE_FIXTURE,'utf8'));
 if(!/^https:\/\/127\.0\.0\.1:\d+$/.test(fixture.url)||process.env.CI!=='true')throw Error('Disposable native CI fixture only');
 const browser=await chromium.launch({headless:true});
@@ -31,9 +32,9 @@ try{
  const discoveries=await(await ctx.request.get(fixture.url+'/api/discoveries')).json();
  const nativeService=discoveries.flatMap(n=>(n.instances||[]).map(v=>({...v,node:n}))).find(v=>v.managed&&v.node.id===fixture.listener);if(!nativeService)throw Error('Actual managed services absent after discovery');
  await page.screenshot({path:'docs/evidence/console-native-discovery-en.png',fullPage:true});
- stage='console-service-tools';await page.locator('nav').getByRole('button',{name:'Services',exact:true}).click();const serviceRow=page.locator('.console-panel tbody tr').filter({has:page.getByRole('cell',{name:nativeService.node.name,exact:true})}).filter({has:page.getByRole('button',{name:nativeService.name,exact:true})});await serviceRow.getByRole('button',{name:nativeService.name,exact:true}).click();await page.getByRole('heading',{name:nativeService.node.name,exact:true}).waitFor();await page.getByRole('button',{name:'Read current configuration',exact:true}).click();
+ stage='console-service-tools';await page.locator('nav').getByRole('button',{name:'Services',exact:true}).click();await openConsoleService(page,nativeService.name,nativeService.node.name);await page.getByRole('button',{name:'Read current configuration',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.operation>.heading .success').length===1,null,{timeout:60000});
- const configurationPanel=page.locator('.operation details[open]').filter({has:page.locator('summary').filter({hasText:'Current redacted configuration'})});await configurationPanel.waitFor();const nativeConfiguration=await configurationPanel.locator('pre').innerText();if(nativeConfiguration.length<20||!nativeConfiguration.includes('[redacted]'))throw Error('Real redacted configuration was not returned');
+ const nativeConfiguration=await displayedConfiguration(page,'Current redacted configuration');if(nativeConfiguration.length<20||!nativeConfiguration.includes('[redacted]'))throw Error('Real redacted configuration was not returned');
  await page.screenshot({path:'docs/evidence/console-native-service-tools-en.png',fullPage:true});
  stage='console-route-check';await page.locator('nav').getByRole('button',{name:'Routes',exact:true}).click();await page.locator('.console-panel table tbody .link').first().click();await page.getByRole('button',{name:'Inspect, check and manage tunnel',exact:true}).click();await page.getByRole('button',{name:'Check connection',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.operation>.heading .success').length===1,null,{timeout:60000});await page.locator('.healthstrip>div').filter({has:page.getByText('Application response',{exact:true})}).locator('.status').filter({hasText:'Passed'}).waitFor();
  await page.locator('nav').getByRole('button',{name:'Tunnels',exact:true}).click();
