@@ -6,3 +6,7 @@ Exact architecture URLs, archive entries and SHA256 are pinned in internal/engin
 Vazirmatn: [SIL Open Font License 1.1](https://github.com/rastikerdar/vazirmatn/blob/master/OFL.txt), served locally. React/React DOM and Vite: MIT. Go module licenses remain in upstream module sources; go.mod, go.sum and npm lock integrity pin dependencies. Private provider credentials and deployment artifacts never belong in the repository.
 
 Backhaul WSS uses that version's certificate behavior; explicit acknowledgement prevents a false identity-verification claim. Unsupported proxy/mutual-auth semantics stay read-only.
+
+Console icons: @tabler/icons-react (MIT), pinned in web/package-lock.json. Decorative topology-world.png generated with the built-in Image Generation tool, 2026-10-22: pale dotted world map, no labels/borders/flags/connectors/text; operational nodes and directions are rendered from records. Generated source was inspected and resized to 640×280.
+
+Country flags: selected unmodified flag-icons v7.6.0 SVG files (MIT), bundled locally with LICENSE. Unknown country uses a globe; country metadata is explicit and never guessed from IP/name.

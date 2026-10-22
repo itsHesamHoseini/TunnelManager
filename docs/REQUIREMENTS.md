@@ -47,3 +47,11 @@ Evidence index and operator checks: [M1–M3 report](M1-M3-REPORT.md). Live ACME
 | M6-06 | Verified deployment through own installer, preserved unrelated infrastructure, public HTTPS/browser smoke and exact rollback guide | PASS: own-installer production controller+same-host agent upgraded to89d9960/0.6.0; encrypted independent backup and exact private rollback record;11 unrelated unit PIDs/states, application listener, master and node identity retained. External strict TLS/401/actual Chrome FA/EN/mobile login pass; six automatically discovered services, zero automatic adoptions. |
 
 Evidence and remaining verification boundaries: [M4–M6 report](M4-M6-REPORT.md). Runtime acceptance is for released89d9960. Later commits add only verification/evidence; supported/provider/platform boundaries remain explicit.
+# Reference console acceptance — 2026-10-22
+| ID | Requirement / verification | State |
+|---|---|---|
+| UI21 | Four reference layouts, real browser captures at target size plus mobile/keyboard | pending |
+| UI22 | Contextual controls connect to real workflows; filters, drafts, selection and job progress | pending |
+| UI23 | Empty/loading/error/stale and independent process/transport/application evidence | pending |
+| DS21 | Unique DNS/address correlation creates observation only; ambiguity/stale/timeout/auth mismatch tests | pending |
+| OP21 | Qualified controller/agent update preserves identities and existing infrastructure | pending |
