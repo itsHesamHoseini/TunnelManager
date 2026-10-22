@@ -17,7 +17,7 @@ npm run build --prefix web
 node scripts/build.mjs
 sudo env TUNNELMANAGER_BINARY=./artifacts/tunnelmanager-linux-amd64 TUNNELMANAGER_CHECKSUM_FILE=./artifacts/SHA256SUMS sh install.sh setup --with-local-node
 ```
-Build machine: Node 24, Go 1.27.2. Target: static binary and systemd; controller uses Docker/Compose. Default runtime paths: /opt/tunnelmanager, /etc/tunnelmanager, /var/lib/tunnelmanager. Only HTTPS is published.
+Build machine: Node 24, Go 1.27.3. Target: static binary and systemd; controller uses Docker/Compose. Default runtime paths: /opt/tunnelmanager, /etc/tunnelmanager, /var/lib/tunnelmanager. Only HTTPS is published.
 
 ## Everyday work
 [Persian task guide](docs/QUICKSTART.fa.md)
