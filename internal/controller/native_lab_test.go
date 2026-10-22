@@ -203,7 +203,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	}
 	t.Log(string(out))
 	batchRevisions := map[string]int64{}
-	for _, name := range []string{"Synthetic native backhaul tcp"} {
+	for _, name := range []string{"Synthetic native backhaul tcp", "Synthetic native backhaul wss"} {
 		var id string
 		var rev int64
 		if s.DB.QueryRow(ctx, "SELECT id,revision FROM tunnels WHERE name=$1", name).Scan(&id, &rev) != nil {
