@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
@@ -178,10 +179,18 @@ func (s *Server) storeImport(ctx context.Context, name string, spec engine.Spec,
 	return id, e
 }
 func (s *Server) reconcileDiscovery(ctx context.Context) {
+	s.reconcileDiscoveryWithLookup(ctx, net.DefaultResolver.LookupIPAddr)
+}
+
+func (s *Server) reconcileDiscoveryWithLookup(ctx context.Context, lookup func(context.Context, string) ([]net.IPAddr, error)) {
 	nodes, e := s.discoveries(ctx)
 	if e != nil {
 		return
 	}
+	// One bounded DNS budget for the whole pass, with at most 24 distinct names.
+	// DNS is evidence of an address only, never proof of service or application health.
+	resolver := newDiscoveryResolver(ctx, lookup)
+	defer resolver.cancel()
 	for _, clientNode := range nodes {
 		if clientNode.At == nil || time.Since(*clientNode.At) > 5*time.Minute {
 			continue
@@ -205,7 +214,7 @@ func (s *Server) reconcileDiscovery(ctx context.Context) {
 				}
 				addressMatches := false
 				for _, a := range serverNode.Addresses {
-					if net.ParseIP(a) != nil && net.ParseIP(a).Equal(net.ParseIP(remote.Host)) {
+					if resolver.matches(remote.Host, a) {
 						addressMatches = true
 					}
 				}
@@ -230,6 +239,53 @@ func (s *Server) reconcileDiscovery(ctx context.Context) {
 			}
 		}
 	}
+}
+
+type discoveryResolver struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	lookup func(context.Context, string) ([]net.IPAddr, error)
+	cache  map[string][]net.IPAddr
+}
+
+func newDiscoveryResolver(ctx context.Context, lookup func(context.Context, string) ([]net.IPAddr, error)) *discoveryResolver {
+	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
+	return &discoveryResolver{bounded, cancel, lookup, map[string][]net.IPAddr{}}
+}
+
+func (r *discoveryResolver) matches(host, address string) bool {
+	ip := net.ParseIP(address)
+	// Unspecified/loopback addresses identify no remote peer.
+	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() {
+		return false
+	}
+	if direct := net.ParseIP(host); direct != nil {
+		return direct.Equal(ip)
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	if !engine.ValidHost(host) {
+		return false
+	}
+	answers, exists := r.cache[host]
+	if !exists {
+		if len(r.cache) >= 24 || r.ctx.Err() != nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(r.ctx, 350*time.Millisecond)
+		var err error
+		answers, err = r.lookup(ctx, host)
+		cancel()
+		if err != nil {
+			answers = nil
+		}
+		r.cache[host] = answers
+	}
+	for _, answer := range answers {
+		if answer.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
 }
 func (s *Server) tunnelImport(w http.ResponseWriter, r *http.Request) {
 	var q struct{ Name, Listener, Dialer, ServerInstance, ClientInstance string }

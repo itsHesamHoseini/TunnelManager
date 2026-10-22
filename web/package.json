@@ -1,6 +1,6 @@
 {
   "name": "tunnelmanager-web",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "test:browser": "playwright test"
   },
   "dependencies": {
+    "@tabler/icons-react": "3.49.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "vazirmatn": "33.0.3"

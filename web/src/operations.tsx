@@ -11,7 +11,7 @@ export async function request(path:string,method='GET',body?:any){
  if(field){const stable={...body};delete stable[field];const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(path+JSON.stringify(stable)));signature=Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');const prior=retries.get(signature);body={...body,[field]:prior||body[field]};if(!prior){if(retries.size>=64)retries.delete(retries.keys().next().value!);retries.set(signature,body[field])}}
  let response:Response;
  try{response=await fetch('/api/'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)})}catch{throw new Error(tr('Connection lost. Your inputs are preserved; retry when connected.','ارتباط قطع شد. ورودی‌ها حفظ شده‌اند؛ پس از اتصال دوباره تلاش کنید.'))}
- const data=await response.json();if(signature&&response.status<500)retries.delete(signature);if(!response.ok)throw new Error(data.message||data.code);return data;
+ const data=await response.json();if(signature&&response.status<500)retries.delete(signature);if(!response.ok)throw new Error(tr(data.message,data.message_fa)||data.code);return data;
 }
 const explanations:Record<string,[string,string]>={
  rediscover_and_import_changed_configuration_before_adoption:['Rediscover both peers and explicitly reimport their current configuration before adoption.','دو طرف را دوباره کشف و کانفیگ فعلی را صریحاً وارد کنید؛ سپس مدیریت را بپذیرید.'],

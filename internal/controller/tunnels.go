@@ -74,9 +74,23 @@ func (s *Server) tunnelDetail(w http.ResponseWriter, r *http.Request) {
 	var health []byte
 	s.DB.QueryRow(r.Context(), "SELECT name,desired,health FROM tunnels WHERE id=$1", r.PathValue("id")).Scan(&name, &desired, &health)
 	configurations := map[string]string{}
-	for _, role := range []string{"server", "client"} {
-		if raw, e := engine.Render(record.Spec, role); e == nil {
-			configurations[role] = engine.Redact(raw)
+	if !managed {
+		// Observation records must preview the actual discovered configuration,
+		// including versions/options that the managed renderer cannot reproduce.
+		if nodes, err := s.discoveries(r.Context()); err == nil {
+			for _, n := range nodes {
+				for _, d := range n.Instances {
+					if record.Instances[n.ID] == d.ID && d.Configuration != "" {
+						configurations[d.Role] = engine.Redact(d.Configuration)
+					}
+				}
+			}
+		}
+	} else {
+		for _, role := range []string{"server", "client"} {
+			if raw, e := engine.Render(record.Spec, role); e == nil {
+				configurations[role] = engine.Redact(raw)
+			}
 		}
 	}
 	rows, e := s.DB.Query(r.Context(), "SELECT revision,at FROM tunnel_versions WHERE tunnel_id=$1 ORDER BY revision DESC LIMIT 50", r.PathValue("id"))

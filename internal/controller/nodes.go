@@ -141,6 +141,7 @@ func (s *Server) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 		Tags             []string `json:"tags"`
 		Notes            string   `json:"notes"`
 		Provider         string   `json:"provider"`
+		Country          string   `json:"country"`
 		Expiry           string   `json:"expiry"`
 		TrafficCap       uint64   `json:"traffic_cap"`
 		ExpectedRevision int64    `json:"expected_revision"`
@@ -150,6 +151,11 @@ func (s *Server) nodeUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if q.Name == "" || len(q.Name) > 80 || (q.Role != "iran" && q.Role != "foreign") || len(q.Notes) > 2000 || len(q.Tags) > 20 {
 		fail(w, 400, "invalid_input", "Check the server details.", "اطلاعات سرور را بررسی کنید.")
+		return
+	}
+	q.Country = strings.ToUpper(q.Country)
+	if q.Country != "" && (len(q.Country) != 2 || q.Country[0] < 'A' || q.Country[0] > 'Z' || q.Country[1] < 'A' || q.Country[1] > 'Z') {
+		fail(w, 400, "invalid_country", "Use a two-letter country code or leave empty.", "کد دوحرفی کشور را وارد کنید یا خالی بگذارید.")
 		return
 	}
 	if q.Expiry != "" {

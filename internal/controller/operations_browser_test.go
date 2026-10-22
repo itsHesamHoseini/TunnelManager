@@ -3,8 +3,13 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/itsHesamHoseini/TunnelManager/internal/engine"
 	"github.com/itsHesamHoseini/TunnelManager/internal/nodeops"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +46,37 @@ func TestOperationalPagesInBrowser(t *testing.T) {
 	result, _ := json.Marshal(map[string]any{"status": "failed", "kind": "tcp", "target": "192.0.2.10:443", "at": time.Now(), "code": "connection_or_protocol_check_failed"})
 	s.DB.Exec(ctx, "UPDATE operations SET phase='succeeded',result=$1 WHERE id=$2", result, diagnostic)
 	s.newJob(ctx, "fixture_queued", "node", "listener", "Fixture queued operation", JobPayload{Node: "listener", Kind: "inventory"})
+	for i := 0; i < 10; i++ {
+		data, _ := json.Marshal(map[string]any{"os": "Synthetic Ubuntu 24.04", "cpu_percent": float64(10 + i*6), "ram_used": (i + 1) * 67108864, "ram_total": 1073741824, "disk_free": (i + 1) * 1073741824})
+		s.DB.Exec(ctx, "INSERT INTO nodes(id,name,role,pubkey,approved,seen,telemetry)VALUES($1,$2,'foreign',$3,true,now(),$4)", fmt.Sprintf("preview-%d", i), fmt.Sprintf("Fixture server %02d", i+1), make([]byte, 32), data)
+	}
+	data, _ := json.Marshal(map[string]any{"os": "Synthetic Ubuntu 24.04", "cpu_percent": 17.5, "ram_used": 268435456, "ram_total": 1073741824, "disk_free": 5368709120, "disk_total": 10737418240})
+	s.DB.Exec(ctx, "UPDATE nodes SET telemetry=$1 WHERE id IN('listener','dialer')", data)
+	for i := 0; i < 12; i++ {
+		sample, _ := json.Marshal(map[string]any{"cpu_percent": float64(15 + i), "ram_used": 268435456 + i*1048576, "disk_free": 5368709120})
+		s.DB.Exec(ctx, "INSERT INTO measurements(node_id,at,data)VALUES('listener',now()-$1*interval '30 seconds',$2)", i, sample)
+	}
+	if os.Getenv("TUNNELMANAGER_PREVIEW") == "1" {
+		// Local-only, synthetic preview. Production authentication and TLS are unchanged.
+
+		u, _ := url.Parse(srv.URL)
+		proxy := httputil.NewSingleHostReverseProxy(u)
+		proxy.Transport = srv.Client().Transport
+		director := proxy.Director
+		proxy.Director = func(r *http.Request) {
+			director(r)
+			if r.Header.Get("Origin") != "" {
+				r.Header.Set("Origin", srv.URL)
+			}
+		}
+		preview := httptest.NewServer(proxy)
+		defer preview.Close()
+		os.MkdirAll(filepath.Join("..", "..", ".runtime"), 0700)
+		os.WriteFile(filepath.Join("..", "..", ".runtime", "console-preview-url"), []byte(preview.URL), 0600)
+		t.Log("Synthetic console preview ready on loopback; URL is in .runtime/console-preview-url")
+		<-time.After(25 * time.Minute)
+		return
+	}
 	cmd := exec.Command("node", "web/tests/operations.mjs")
 	cmd.Dir = filepath.Join("..", "..")
 	cmd.Env = append(os.Environ(), "TUNNELMANAGER_TEST_URL="+srv.URL)

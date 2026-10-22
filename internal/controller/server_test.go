@@ -11,6 +11,7 @@ import (
 	"github.com/itsHesamHoseini/TunnelManager/internal/secure"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"io"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -54,7 +55,23 @@ func testServer(t *testing.T) (*Server, *httptest.Server, *http.Client) {
 	if e = s.InitAdmin(ctx, "testadmin", "Synthetic-Password-2026!"); e != nil {
 		t.Fatal(e)
 	}
-	srv := httptest.NewTLSServer(s.Handler())
+	srv := httptest.NewUnstartedServer(s.Handler())
+	srv.Listener.Close()
+	// Some Windows hosts allocate ephemeral ports in Chromium's blocked range
+	// (for example 6665). Bind an ordinary high loopback port, without changing
+	// browser protections or the production listener.
+	for i := 0; i < 100; i++ {
+		port := 20000 + (time.Now().UnixNano()+int64(i))%40000
+		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			srv.Listener = listener
+			break
+		}
+		if i == 99 {
+			t.Fatal("test loopback port unavailable")
+		}
+	}
+	srv.StartTLS()
 	s.Config.Origin = srv.URL
 	c := srv.Client()
 	c.Jar, _ = cookiejar.New(nil)
