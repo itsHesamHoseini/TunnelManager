@@ -8,6 +8,18 @@ import (
 func fixture(name string) Spec {
 	return Spec{Engine: name, Version: map[string]string{"rathole": "0.5.0", "backhaul": "0.7.2"}[name], Transport: "tcp", Listener: "listener", Dialer: "dialer", TransportBind: Endpoint{"0.0.0.0", 28100}, TransportRemote: Endpoint{"listener.example.com", 28100}, Token: "synthetic-token-not-a-credential", Routes: []Route{{ID: "one", Name: "First", User: Endpoint{"0.0.0.0", 24443}, Backend: Endpoint{"127.0.0.1", 2096}, Protocol: "tcp"}}}
 }
+func TestRedactUnsupportedNestedArrayTables(t *testing.T) {
+	raw := "[client]\nremote_addr='example.com:28100'\ntoken='synthetic-top-level-secret'\n[[client.extensions]]\nname='kept-evidence'\npassword='synthetic-nested-password'\nitems=[{api_key='synthetic-inline-key', label='kept-label'}]\n"
+	redacted := Redact(raw)
+	for _, secret := range []string{"synthetic-top-level-secret", "synthetic-nested-password", "synthetic-inline-key"} {
+		if strings.Contains(redacted, secret) {
+			t.Fatal("nested secret reached a configuration preview")
+		}
+	}
+	if !strings.Contains(redacted, "kept-evidence") || !strings.Contains(redacted, "kept-label") {
+		t.Fatal("non-sensitive unsupported evidence was lost")
+	}
+}
 func TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade(t *testing.T) {
 	s := fixture("rathole")
 	s.PeerOptions = map[string]map[string]any{"server": {"heartbeat_interval": float64(30), "transport": map[string]any{"tcp": map[string]any{"nodelay": true}}}, "client": {"retry_interval": float64(7), "services": map[string]any{"one": map[string]any{"nodelay": false}}}}

@@ -54,5 +54,6 @@ Evidence and remaining verification boundaries: [M4–M6 report](M4-M6-REPORT.md
 | UI22 | Contextual controls connect to real workflows; filters, drafts, selection and job progress | pending |
 | UI23 | Empty/loading/error/stale and independent process/transport/application evidence | pending |
 | DS21 | Unique DNS/address correlation creates observation only; ambiguity/stale/timeout/auth mismatch tests | pending |
+| DS22 | Configuration evidence masks secret fields inside nested TOML array tables/inline arrays while retaining non-sensitive evidence | regression reproduced; fix under verification |
 | OP21 | Qualified controller/agent update preserves identities and existing infrastructure | pending |
 Reference-console checkpoint: UI21/UI22/UI23 and DS21 pass local real PostgreSQL/Chrome fixture tests, including direct service selection, draft guards, mobile/short viewport navigation, filters and evidence redaction. These are labelled fixture evidence. Additional native browser assertions exercise the same discovery/service/route entry points against real agents/engines; their CI result and OP21 deployment remain pending. No native or production success is inferred from these local results.

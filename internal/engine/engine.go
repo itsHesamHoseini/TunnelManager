@@ -448,13 +448,20 @@ func Redact(raw string) string {
 	if e != nil {
 		return "[configuration unreadable]"
 	}
-	var walk func(map[string]any)
-	walk = func(m map[string]any) {
-		for k, v := range m {
-			key := strings.ToLower(k)
-			if strings.Contains(key, "token") || strings.Contains(key, "password") || strings.Contains(key, "secret") || strings.Contains(key, "key") || key == "proxy" {
-				m[k] = Mask
-			} else if child, ok := v.(map[string]any); ok {
+	var walk func(any)
+	walk = func(value any) {
+		switch m := value.(type) {
+		case map[string]any:
+			for k, v := range m {
+				key := strings.ToLower(k)
+				if strings.Contains(key, "token") || strings.Contains(key, "password") || strings.Contains(key, "secret") || strings.Contains(key, "key") || key == "proxy" {
+					m[k] = Mask
+				} else {
+					walk(v)
+				}
+			}
+		case []any:
+			for _, child := range m {
 				walk(child)
 			}
 		}
