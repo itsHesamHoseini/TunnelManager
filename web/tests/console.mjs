@@ -14,5 +14,5 @@ export async function verifyConsole(page){
  await page.getByLabel('جست‌وجوی کلی',{exact:true}).press('Control+k');if(!await page.getByLabel('جست‌وجوی کلی',{exact:true}).evaluate(el=>el===document.activeElement))throw Error('Search keyboard shortcut failed');
  for(const name of ['نمای کلی','مسیرها','سرورها','دیسکاوری']){await page.setViewportSize({width:390,height:844});await nav(name).click();if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Console mobile overflow: '+name)}
  await page.screenshot({path:'docs/evidence/console-mobile-fixture-fa.png'});await page.setViewportSize({width:1448,height:1086});
- await nav('تونل‌ها').click();
+ await nav('سرویس‌ها').click();await page.getByRole('button',{name:'Synthetic shared service',exact:true}).click();await page.getByRole('button',{name:'خواندن کانفیگ فعلی',exact:true}).waitFor();await nav('تونل‌ها').click();
 }

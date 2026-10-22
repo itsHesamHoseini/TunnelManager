@@ -21,5 +21,22 @@ try{
   await page.locator('main').getByRole('button',{name:'Tunnels',exact:true}).first().click();
   console.log('Native browser '+engine+': actual form, two-peer preflight, impact confirmation, local rollback armed, real pending HTTP path check, explicit commit and independent health observations passed.');
  }
+
+ stage='console-discovery';await page.setViewportSize({width:1448,height:1086});
+ const actualNodes=await(await ctx.request.get(fixture.url+'/api/nodes')).json();
+ await page.locator('nav').getByRole('button',{name:'Discovery',exact:true}).click();
+ for(const id of [fixture.listener,fixture.dialer]){const n=actualNodes.find(x=>x.id===id);if(!n)throw Error('Native node missing');await page.getByLabel(n.name,{exact:true}).check()}
+ await page.getByRole('button',{name:'Run discovery',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.operation>.heading .success').length===2,null,{timeout:90000});
+ const discoveries=await(await ctx.request.get(fixture.url+'/api/discoveries')).json();
+ const nativeService=discoveries.flatMap(n=>(n.instances||[]).map(v=>({...v,node:n}))).find(v=>v.managed&&v.node.id===fixture.listener);if(!nativeService)throw Error('Actual managed services absent after discovery');
+ await page.screenshot({path:'docs/evidence/console-native-discovery-en.png',fullPage:true});
+ stage='console-service-tools';await page.locator('nav').getByRole('button',{name:'Services',exact:true}).click();await page.getByRole('button',{name:nativeService.name,exact:true}).first().click();await page.getByRole('button',{name:'Read current configuration',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.operation>.heading .success').length===1,null,{timeout:60000});
+ const nativeConfiguration=await page.locator('.operation pre').last().innerText();if(nativeConfiguration.length<20||!nativeConfiguration.includes('[redacted]'))throw Error('Real redacted configuration was not returned');
+ await page.screenshot({path:'docs/evidence/console-native-service-tools-en.png',fullPage:true});
+ stage='console-route-check';await page.locator('nav').getByRole('button',{name:'Routes',exact:true}).click();await page.locator('.console-panel table tbody .link').first().click();await page.getByRole('button',{name:'Inspect, check and manage tunnel',exact:true}).click();await page.getByRole('button',{name:'Check connection',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.operation>.heading .success').length===1,null,{timeout:60000});await page.locator('.healthstrip>div').filter({has:page.getByText('Application response',{exact:true})}).locator('.status').filter({hasText:'Passed'}).waitFor();
+ await page.locator('nav').getByRole('button',{name:'Tunnels',exact:true}).click();
+ console.log('Native operational console: selected-node discovery, direct service configuration read and logical-route application check passed against real signed Linux/systemd peers and engines.');
  stage='mobile';await page.setViewportSize({width:390,height:844});await page.screenshot({path:'docs/evidence/m4-native-mobile.png',fullPage:true});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('mobile overflow');
 }catch(e){if(stage!=='login'){try{const res=await page.request.get(fixture.url+'/api/operations');const ops=await res.json();console.error(JSON.stringify(ops.slice(0,8).map(x=>({kind:x.kind,phase:x.phase,error:x.error}))))}catch{};await page.screenshot({path:'docs/evidence/native-failure.png',fullPage:true}).catch(()=>{})};console.error('Native browser failed at '+stage+(stage==='login'?' (authentication details suppressed)':': '+String(e.message).split('\n')[0]));process.exitCode=1}finally{await browser.close()}

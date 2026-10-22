@@ -1,3 +1,5 @@
+Service navigation deep-links by node and discovered instance ID into the existing bounded tools. Opening it never adopts or mutates; inventory reload selects the requested instance once, preserving later user selection. The global Services table exposes ownership, freshness and every affected recorded tunnel. Native browser coverage must verify discovery jobs, configuration read and route diagnostics through these entry points.
+
 # Contracts
 C1 HTTP: JSON errors include stable code, English/Persian message, request ID. Bodies <=64 KiB. Origin checking on writes, Secure HttpOnly SameSite=Strict cookies, hashed session tokens, 12-hour session expiry.
 C2 Authentication: Argon2id hashes, bounded expensive-password work; equal unknown-user hashing. Password creates a 2-minute single-use challenge. MFA success rotates to an authenticated session; pending TOTP sessions may only enroll. TOTP replay prevented with monotonic step. Recovery codes stored as hashes, consumed atomically.
