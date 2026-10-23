@@ -24,7 +24,7 @@ jobs:
         with: {node-version: 24}
       - run: npm ci --prefix web
       - run: npm run build --prefix web
-      - run: npx playwright install chromium --with-deps
+      - run: npx playwright install chrome --with-deps
         working-directory: web
       - run: docker build -t tunnelmanager-native-lab -f scripts/native-lab.Dockerfile .
       - run: go test -tags nativelab -timeout 25m -v ./internal/nodeops
@@ -37,4 +37,6 @@ jobs:
         if: always()
         with:
           name: native-browser-evidence
-          path: docs/evidence/*native*.png
+          path: |
+            docs/evidence/*native*.png
+            docs/evidence/revision2/*native*

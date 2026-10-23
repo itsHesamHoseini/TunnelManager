@@ -9,14 +9,14 @@ Previous PASS entries below are historical release-scoped evidence and do not qu
 |---|---|---|
 | V2-00 | Chrome before/after at 1448x1086, 1920 and mobile: stale/disconnected/missing/API failure neutral resources, shared counts, threshold boundaries, Persian time/message/next action; Go request-id equality | PENDING |
 | V2-01 | Backhaul-only source scan/allowlist, backed-up mixed DB migration, no host writes, unknown listener port rejection, TCP/WSS native and Chrome | PENDING |
-| V2-02 | Simple two-peer port/backend/token/transport edit with honest click counts, advanced/raw preserved, native traffic/preflight/partial failure/manual+timer rollback, Chrome captures and recording | Field group approved; implementation/evidence PENDING |
+| V2-02 | Simple two-peer port/backend/token/transport edit with honest click counts, advanced/raw preserved, native traffic/preflight/partial failure/manual+timer rollback, Chrome captures and recording | PARTIAL: approved six-field/mapping editor, readonly draft API, secret/identity/Chrome regressions; native new edit/fault matrix pending |
 | V2-03 | Classified adoption ratios and native discover/adopt/edit/revert without rewrite on adoption; owner corpus coverage | PENDING real redacted corpus |
 | V2-04 | Six main destinations, complete old-to-new functionality map and legacy routing browser checks | PENDING owner merge confirmation |
 | V2-05 | Action-first overview and server table without desktop overflow/truncated headers at >=1280 | PENDING |
 | V2-06 | Attention ordering, honest interface scope, layered timestamps and gapped 24h/7d history | PENDING |
 | V2-07 | Limited through-tunnel TCP/TLS check with explicit non-VLESS scope; VLESS proposal only | PENDING |
 | V2-08 | Copyable bootstrap, waiting/reconnect progress, full fingerprint plus comparison aid; optional SSH proposal only | PENDING |
-| V2-09 | Only reproduced maintenance bugs fixed with regression evidence; Persian form copy inventory | PENDING |
+| V2-09 | Only reproduced maintenance bugs fixed with regression evidence; Persian form copy inventory | PARTIAL: model/browser regressions and FORM-COPY.fa.md; remaining evidence in REVISION-2.md |
 
 Retired-engine portions of M4-01, M4-04, M5-01, M5-03 and C12/C17/C20 are **REMOVED BY OWNER (2026-10-23)**; Backhaul portions and safety guarantees remain required. Their old IDs/results are retained below as historical evidence, not silently deleted.
 

@@ -157,6 +157,7 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	instances := map[string]string{}
 	hashes := map[string]string{}
+	var previous *engine.Spec
 	if q.Tunnel != "" {
 		old, rev, managed, e := s.readTunnel(r.Context(), q.Tunnel)
 		if e != nil || rev != q.ExpectedRevision {
@@ -168,6 +169,7 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		engine.MergeSecrets(&q.Spec, old.Spec)
+		previous = &old.Spec
 		instances = old.Instances
 		hashes = old.Hashes
 		if q.RevertRevision > 0 {
@@ -187,6 +189,9 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 	if e := engine.NormalizeRaw(&q.Spec); e != nil {
 		badOperation(w, e)
 		return
+	}
+	if previous == nil && q.Spec.Token == engine.Mask {
+		q.Spec.Token = ""
 	}
 	if e := engine.GenerateSecrets(&q.Spec); e != nil {
 		badOperation(w, e)
@@ -233,7 +238,7 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 	if instances[q.Spec.Dialer] == "" {
 		instances[q.Spec.Dialer] = id + "_c"
 	}
-	payload := JobPayload{RequestHash: requestHash, Spec: q.Spec, Tunnel: id, Name: q.Name, ExpectedRevision: q.ExpectedRevision, Instances: instances, Hashes: hashes}
+	payload := JobPayload{Changes: settingChanges(previous, q.Spec), RequestHash: requestHash, Spec: q.Spec, Tunnel: id, Name: q.Name, ExpectedRevision: q.ExpectedRevision, Instances: instances, Hashes: hashes}
 	if e := s.expand(r.Context(), &payload); e != nil {
 		badOperation(w, e)
 		return
@@ -387,7 +392,7 @@ func (s *Server) processPlan(ctx context.Context, id, phase string, q JobPayload
 			s.phase(ctx, id, "failed", previews, e)
 			return
 		}
-		s.phase(ctx, id, "ready", map[string]any{"previews": previews, "affected_tunnels": publicAffected(q), "affected_routes": engine.Public(q.Spec).Routes, "reverse_connection": map[string]string{"from": q.Spec.Dialer, "to": q.Spec.Listener}, "notice": "activation restarts the selected shared units; application health is checked separately"}, nil)
+		s.phase(ctx, id, "ready", map[string]any{"changes": q.Changes, "previews": previews, "affected_tunnels": publicAffected(q), "affected_routes": engine.Public(q.Spec).Routes, "reverse_connection": map[string]string{"from": q.Spec.Dialer, "to": q.Spec.Listener}, "notice": "activation restarts the selected shared units; application health is checked separately"}, nil)
 	case "applying":
 		for _, g := range q.Updates {
 			s.DB.Exec(ctx, `UPDATE tunnels SET health='{"transport":{"status":"unknown","code":"change_in_progress"},"application":{"status":"unknown"}}' WHERE id=$1`, g.ID)

@@ -60,7 +60,7 @@ func NormalizeRaw(s *Spec) error {
 		return e
 	}
 
-	s.Routes = sp.Routes
+	s.Routes = retainMappingIdentity(s.Routes, sp.Routes)
 
 	s.PeerOptions = map[string]map[string]any{}
 	for role, side := range map[string]map[string]any{"server": server, "client": client} {
@@ -76,6 +76,39 @@ func NormalizeRaw(s *Spec) error {
 	s.RawServer = ""
 	s.RawClient = ""
 	return nil
+}
+
+// TOML has no panel IDs. First retain identities by the actual user binding;
+// remaining replacements retain their row identity when that position is free.
+// New rows get a binding-derived ID, avoiding a collision with a retained row.
+func retainMappingIdentity(old, parsed []Route) []Route {
+	used := map[int]bool{}
+	matched := map[int]bool{}
+	assign := func(i, j int) {
+		parsed[i].ID = old[j].ID
+		parsed[i].Name = old[j].Name
+		used[j] = true
+		matched[i] = true
+	}
+	for i, r := range parsed {
+		for j, prior := range old {
+			if !used[j] && prior.User == r.User {
+				assign(i, j)
+				break
+			}
+		}
+	}
+	for i := range parsed {
+		if matched[i] {
+			continue
+		}
+		if i < len(old) && !used[i] {
+			assign(i, i)
+		} else {
+			parsed[i].ID = "raw_" + Digest([]byte(parsed[i].User.String()))[:16]
+		}
+	}
+	return parsed
 }
 func MergeRedactedRaw(next, old string) (string, error) {
 	n, e := Parse(next)

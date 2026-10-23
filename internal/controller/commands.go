@@ -134,6 +134,7 @@ func (s *Server) command(ctx context.Context, op, node, stage, kind string, payl
 }
 
 type JobPayload struct {
+	Changes          []SettingChange   `json:"changes,omitempty"`
 	PreserveCurrent  bool              `json:"preserve_current,omitempty"`
 	RecoveryAttempt  int               `json:"recovery_attempt,omitempty"`
 	FailureCode      string            `json:"failure_code,omitempty"`
@@ -421,7 +422,7 @@ func (s *Server) operationDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	var q JobPayload
 	s.openValue("operation:"+id, cipher, &q)
-	write(w, map[string]any{"id": id, "kind": kind, "target": target, "name": name, "phase": phase, "error": code, "steps": json.RawMessage(steps), "result": json.RawMessage(result), "deadline": deadline, "affected_tunnels": publicAffected(q)})
+	write(w, map[string]any{"id": id, "kind": kind, "target": target, "name": name, "phase": phase, "error": code, "steps": json.RawMessage(steps), "result": json.RawMessage(result), "deadline": deadline, "changes": q.Changes, "affected_tunnels": publicAffected(q)})
 }
 func (s *Server) nodeAction(w http.ResponseWriter, r *http.Request) {
 	var q struct {
