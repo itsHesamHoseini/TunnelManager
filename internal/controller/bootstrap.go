@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed node_bootstrap.sh
@@ -128,7 +129,7 @@ func (s *Server) bootstrapCommand() (string, error) {
 	}
 	// No supplied name/token/command becomes shell text. Only the configured
 	// HTTPS origin is single-quoted, and private enrollment stays in the prompt.
-	return `(umask 077; task_dir="$(mktemp -d /tmp/tm-node-start.XXXXXXXX)" || exit; trap 'case "$task_dir" in /tmp/tm-node-start.*) rm -rf -- "$task_dir";; esac' EXIT HUP INT TERM; curl --proto '=https' --tlsv1.2 -fsSL ` + shellLiteral(origin+"/bootstrap/node-install.sh") + ` -o "$task_dir/setup.sh" && sh "$task_dir/setup.sh")`, nil
+	return `(umask 077; task_dir="$(mktemp -d /tmp/tm-node-start.XXXXXXXX)" || exit; trap 'case "$task_dir" in /tmp/tm-node-start.*) rm -rf -- "$task_dir";; esac' EXIT HUP INT TERM; curl --proto '=https' --tlsv1.2 --connect-timeout 10 --max-time 30 -fsSL ` + shellLiteral(origin+"/bootstrap/node-install.sh") + ` -o "$task_dir/setup.sh" && sh "$task_dir/setup.sh")`, nil
 }
 func (s *Server) bootstrapScript(w http.ResponseWriter, r *http.Request) {
 	if s.limited(w, r, "node-bootstrap:"+s.ip(r), .05, 4) {
@@ -175,6 +176,12 @@ func (s *Server) bootstrapDownload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "node_artifact_changed", "Controller artifact changed. Wait for restart.", "فایل پنل تغییر کرده؛ منتظر پایان به‌روزرسانی بمانید.")
 		return
 	}
+	deadline := http.NewResponseController(w)
+	if err := deadline.SetWriteDeadline(time.Now().Add(5 * time.Minute)); err != nil {
+		fail(w, 503, "node_artifact_unavailable", "Bounded download unavailable.", "دریافت محدود فایل در دسترس نیست؛ کمی بعد دوباره تلاش کنید.")
+		return
+	}
+	defer deadline.SetWriteDeadline(time.Time{})
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="tunnelmanager-linux-`+meta.Arch+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))

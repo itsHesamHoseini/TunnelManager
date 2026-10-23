@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -41,16 +43,31 @@ func bootstrapServer(t *testing.T, path string) *Server {
 	s.bootstrapPath = path
 	return s
 }
-func bootstrapGet(s *Server, path, arch, ip string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest("GET", path, nil)
-	r.RemoteAddr = ip + ":41234"
-	r.SetPathValue("arch", arch)
-	w := httptest.NewRecorder()
-	if arch == "" {
-		s.bootstrapScript(w, r)
-	} else {
-		s.bootstrapDownload(w, r)
+func bootstrapGet(t *testing.T, s *Server, path, arch, ip string) *httptest.ResponseRecorder {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = ip + ":41234"
+		r.SetPathValue("arch", arch)
+		if arch == "" {
+			s.bootstrapScript(w, r)
+		} else {
+			s.bootstrapDownload(w, r)
+		}
+	}))
+	defer server.Close()
+	response, err := http.Get(server.URL + path)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	w.Code = response.StatusCode
+	w.HeaderMap = response.Header
+	w.Body.Write(body)
 	return w
 }
 
@@ -66,40 +83,40 @@ func TestBootstrapPinnedBytesAndGuards(t *testing.T) {
 	if err != nil || meta.Arch != "amd64" || meta.Hash != hex.EncodeToString(digest[:]) || meta.Size != int64(len(contents)) {
 		t.Fatalf("metadata mismatch: %v", err)
 	}
-	script := bootstrapGet(s, "/bootstrap/node-install.sh", "", "192.0.2.1")
+	script := bootstrapGet(t, s, "/bootstrap/node-install.sh", "", "192.0.2.1")
 	if script.Code != 200 || !strings.Contains(script.Body.String(), meta.Hash) || !strings.Contains(script.Body.String(), "--token-stdin") || strings.Contains(script.Body.String(), "@HASH@") || strings.Contains(script.Body.String(), "--insecure") {
 		t.Fatal("bootstrap script not pinned or unsafe")
 	}
 	if script.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("script cached")
 	}
-	good := bootstrapGet(s, "/bootstrap/node/amd64?path=/etc/private", "amd64", "192.0.2.2")
+	good := bootstrapGet(t, s, "/bootstrap/node/amd64?path=/etc/private", "amd64", "192.0.2.2")
 	if good.Code != 200 || !bytes.Equal(good.Body.Bytes(), contents) || good.Header().Get("Content-Type") != "application/octet-stream" {
 		t.Fatal("download did not serve exact pinned program bytes")
 	}
-	wrong := bootstrapGet(s, "/bootstrap/node/arm64", "arm64", "192.0.2.3")
+	wrong := bootstrapGet(t, s, "/bootstrap/node/arm64", "arm64", "192.0.2.3")
 	if wrong.Code != 404 {
 		t.Fatal("wrong architecture accepted")
 	}
 	s.bootstrapSlots <- struct{}{}
-	busy := bootstrapGet(s, "/bootstrap/node/amd64", "amd64", "192.0.2.4")
+	busy := bootstrapGet(t, s, "/bootstrap/node/amd64", "amd64", "192.0.2.4")
 	<-s.bootstrapSlots
 	if busy.Code != 429 || bytes.Equal(busy.Body.Bytes(), contents) {
 		t.Fatal("concurrent download not bounded")
 	}
 	for i := 0; i < 2; i++ {
-		if bootstrapGet(s, "/bootstrap/node/amd64", "amd64", "192.0.2.5").Code != 200 {
+		if bootstrapGet(t, s, "/bootstrap/node/amd64", "amd64", "192.0.2.5").Code != 200 {
 			t.Fatal("rate fixture unavailable")
 		}
 	}
-	if bootstrapGet(s, "/bootstrap/node/amd64", "amd64", "192.0.2.5").Code != 429 {
+	if bootstrapGet(t, s, "/bootstrap/node/amd64", "amd64", "192.0.2.5").Code != 429 {
 		t.Fatal("download rate unbounded")
 	}
 	// Keep a valid Go ELF, but change its digest after the first metadata read.
 	if err := os.WriteFile(path, append(contents, byte(0)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if bootstrapGet(s, "/bootstrap/node/amd64", "amd64", "192.0.2.6").Code != 503 {
+	if bootstrapGet(t, s, "/bootstrap/node/amd64", "amd64", "192.0.2.6").Code != 503 {
 		t.Fatal("changed artifact escaped pinned digest")
 	}
 }
@@ -135,7 +152,7 @@ func TestBootstrapRejectsInvalidFilesAndOrigins(t *testing.T) {
 		t.Fatal("oversized artifact accepted")
 	}
 	s := bootstrapServer(t, filepath.Join(dir, "missing"))
-	if bootstrapGet(s, "/bootstrap/node-install.sh", "", "192.0.2.1").Code != 503 {
+	if bootstrapGet(t, s, "/bootstrap/node-install.sh", "", "192.0.2.1").Code != 503 {
 		t.Fatal("missing artifact advertised")
 	}
 	for _, origin := range []string{"http://controller.example.com", "https://user" + ":password@" + "controller.example.com", "https://controller.example.com/?secret=value", "https://controller.example.com/other", "https://controller.example.com/#fragment"} {

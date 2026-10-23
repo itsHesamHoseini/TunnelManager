@@ -99,3 +99,5 @@ V2-WP8-02: fresh-host bootstrap streams only the pinned current Linux binary, en
 V2-WP8-02 local guards qualified: TestBootstrapPinnedBytesAndGuards and TestBootstrapRejectsInvalidFilesAndOrigins exercise actual Go Linux artifact bytes/HTTP/digest/architecture/concurrency/rate/replacement guards. Full local Chrome enrollment regressions pass; disposable native fresh setup and incorrect-checksum rejection remain pending.
 
 V2-WP0-availability regression qualified locally: TestTunnelHealthUsesAuthoritativeNodeAvailability reproduces three inconsistent node/tunnel states before the fix and passes afterward, with real PostgreSQL/signed connection; current fresh and old cases retained. TestOperationalPagesInBrowser/TestServerPagesInBrowser/TestSimpleEditorChrome also pass.
+
+V2-WP0-audit and V2-WP5-task: TestRevisionHonestyBrowser waits for real audit rows, rejects visible known/unknown raw codes, and records one button click from the home failed-tunnel action to its failed layer. Synthetic failed receipt is labelled sample. The raw-audit assertion fails before renderer change and passes after.

@@ -96,7 +96,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	ids := []string{}
 	s.Config.Origin = fmt.Sprintf("https://controller.example.com:%d", port)
 	for i, node := range nodes {
-		run("run", "-d", "--name", node, "--network", network, "--add-host", "controller.example.com:host-gateway", "--privileged", "--cgroupns=host", "--tmpfs", "/run", "--tmpfs", "/run/lock", "--tmpfs", "/tmp", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw", "tunnelmanager-native-lab")
+		run("run", "-d", "--name", node, "--network", network, "--add-host", "controller.example.com:host-gateway", "--privileged", "--cgroupns=host", "--tmpfs", "/run", "--tmpfs", "/run/lock", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw", "tunnelmanager-native-lab")
 		n := node
 		t.Cleanup(func() { exec.Command("docker", "rm", "-f", n).Run() })
 		run("exec", node, "mkdir", "-p", "/lab/public")

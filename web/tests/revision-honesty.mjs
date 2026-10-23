@@ -72,6 +72,12 @@ try{
   await page.screenshot({path:`${output}/wp0-api-error-sample.png`,fullPage:true});
   await page.unroute('**/api/nodes');
   await nav('نمای کلی').click();const item=page.locator('.action-priorities li').filter({has:page.getByText('نمونه خارج قطع',{exact:true})});await item.getByRole('button',{name:'بررسی سرور',exact:true}).click();await page.getByRole('heading',{name:'نمونه خارج قطع',exact:true}).waitFor();console.log(JSON.stringify({daily_task:'find disconnected server and inspect cause',buttonClicks:1,scope:'actual sample Chrome, from home contextual action'}));
+  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/audit')),nav('امنیت').click()]);await page.getByRole('heading',{name:'ثبت عملیات',exact:true}).waitFor();
+  await page.locator('main table tbody tr').filter({hasText:'نمونه خارج قطع'}).waitFor();
+  const auditText=await page.locator('main').innerText();
+  if(/operation-failed|unknown_internal_event|unknown_private_reason|inventory · node_offline/.test(auditText))throw Error('Raw audit codes leaked on the security page');
+  await page.screenshot({path:output+'/wp0-audit-sample.png',fullPage:true});
+  await nav('نمای کلی').click();const failedTunnel=page.locator('.action-priorities li').filter({has:page.getByText('نمونه تونل ایران به خارج',{exact:true})});await failedTunnel.getByRole('button',{name:'بررسی تونل',exact:true}).click();await page.getByRole('heading',{name:'نمونه تونل ایران به خارج',exact:true}).waitFor();await page.locator('.healthstrip .danger').waitFor();console.log(JSON.stringify({daily_task:'find failed tunnel and inspect failed layer',buttonClicks:1,scope:'sample UI; actual Go/PostgreSQL/signed telemetry and Chrome, synthetic failed application receipt; not engine failure evidence'}));
  }
  if(exceptions.length)throw exceptions[0];
  console.log(JSON.stringify({scope:'sample UI with real Chrome and isolated Go/PostgreSQL authentication',before,widths:[1448,1920,390],screenshots:output,assertions:before?'baseline captures only':'offline/missing/API-failure resources, messages, time isolation, desktop layout'}));

@@ -24,6 +24,13 @@ trap cleanup EXIT
 docker compose -f .runtime/compose/compose.yaml up -d --build --wait --wait-timeout 120
 sudo curl --fail --retry 3 --retry-all-errors --retry-delay 1 --cacert .runtime/config/tls/cert.pem https://127.0.0.1:9443/healthz
 test "$(sudo curl --silent --cacert .runtime/config/tls/cert.pem -o /dev/null -w '%{http_code}' https://127.0.0.1:9443/api/me)" = 401
+# Actual public bootstrap distribution through the hardened nginx edge.
+sudo curl --fail --connect-timeout 10 --max-time 300 --cacert .runtime/config/tls/cert.pem https://127.0.0.1:9443/bootstrap/node-install.sh -o .runtime/edge-node-install.sh
+sudo curl --fail --connect-timeout 10 --max-time 300 --cacert .runtime/config/tls/cert.pem https://127.0.0.1:9443/bootstrap/node/amd64 -o .runtime/edge-node-binary
+cmp .runtime/compose/tunnelmanager .runtime/edge-node-binary
+sha="$(sha256sum .runtime/edge-node-binary | cut -d ' ' -f 1)"
+grep -F "expected='$sha'" .runtime/edge-node-install.sh >/dev/null
+echo 'Verified edge bootstrap program bytes and script checksum match.'
 # Bounded requests only on this disposable stack verify nginx's real 429 response.
 for n in $(seq 1 45); do
   sudo curl --silent --cacert .runtime/config/tls/cert.pem -D ".runtime/rate-$n.headers" -o /dev/null -w '%{http_code}' https://127.0.0.1:9443/api/me > ".runtime/rate-$n.status" &

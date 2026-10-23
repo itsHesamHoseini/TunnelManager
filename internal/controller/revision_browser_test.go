@@ -20,6 +20,9 @@ func TestRevisionHonestyBrowser(t *testing.T) {
 	defer cancel()
 	conn := fixtureNode(t, s, srv, c, ctx)
 	defer conn.CloseNow()
+	peer := connectedAdoptionFixture(t, s, srv, "peer-fixture", ctx)
+	defer peer.CloseNow()
+	s.DB.Exec(ctx, "UPDATE nodes SET name='نمونه سمت مقصد' WHERE id='peer-fixture'")
 	s.DB.Exec(ctx, "UPDATE nodes SET name='نمونه ایران متصل' WHERE id='live-fixture'")
 	data, _ := json.Marshal(map[string]any{"at": time.Now(), "os": "Ubuntu sample", "cpu_percent": 95, "ram_used": 95, "ram_total": 100, "disk_total": 100, "disk_free": 5})
 	for _, node := range []struct{ id, name, age string }{
@@ -51,9 +54,10 @@ func TestRevisionHonestyBrowser(t *testing.T) {
 			if name != "backhaul" {
 				id, title, instance = "retired_sample", "نمونه کنارگذاشته‌شده", "retired_instance"
 			}
-			spec := engine.Spec{Engine: name, Version: "0.7.2", Transport: "tcp", Listener: "live-fixture", Dialer: "disconnected", TransportBind: engine.Endpoint{Host: "0.0.0.0", Port: 28100}, TransportRemote: engine.Endpoint{Host: "192.0.2.10", Port: 28100}, Token: "synthetic-only-token", Routes: []engine.Route{{ID: "route1", Name: "نمونه نگاشت", User: engine.Endpoint{Host: "0.0.0.0", Port: 24443}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}}}
-			cipher, _ := s.sealValue("tunnel:"+id, TunnelRecord{Spec: spec, Instances: map[string]string{"live-fixture": instance, "disconnected": instance + "_peer"}})
-			if _, e := s.DB.Exec(ctx, "INSERT INTO tunnels(id,name,cipher)VALUES($1,$2,$3)", id, title, cipher); e != nil {
+			spec := engine.Spec{Engine: name, Version: "0.7.2", Transport: "tcp", Listener: "live-fixture", Dialer: "peer-fixture", TransportBind: engine.Endpoint{Host: "0.0.0.0", Port: 28100}, TransportRemote: engine.Endpoint{Host: "192.0.2.10", Port: 28100}, Token: "synthetic-only-token", Routes: []engine.Route{{ID: "route1", Name: "نمونه نگاشت", User: engine.Endpoint{Host: "0.0.0.0", Port: 24443}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}}}
+			cipher, _ := s.sealValue("tunnel:"+id, TunnelRecord{Spec: spec, Instances: map[string]string{"live-fixture": instance, "peer-fixture": instance + "_peer"}})
+			health, _ := json.Marshal(map[string]any{"at": time.Now(), "process": []map[string]any{{"status": "passed"}, {"status": "passed"}}, "transport": map[string]any{"status": "passed", "source": "peer-fixture"}, "application": map[string]any{"status": "failed", "source": "peer-fixture", "code": "connection_or_protocol_check_failed"}})
+			if _, e := s.DB.Exec(ctx, "INSERT INTO tunnels(id,name,cipher,health)VALUES($1,$2,$3,$4)", id, title, cipher, health); e != nil {
 				t.Fatal(e)
 			}
 		}
