@@ -97,3 +97,5 @@ V2-WP9-03: delayed real node-list response over two browser poll ticks produces2
 V2-WP8-02: fresh-host bootstrap streams only the pinned current Linux binary, enforces checksum/architecture/TLS/concurrency/rate/size and unchanged installer authority. Local artifact-protocol/tamper tests and disposable native actual download/install/enroll required. No production execution or public release dependency.
 
 V2-WP8-02 local guards qualified: TestBootstrapPinnedBytesAndGuards and TestBootstrapRejectsInvalidFilesAndOrigins exercise actual Go Linux artifact bytes/HTTP/digest/architecture/concurrency/rate/replacement guards. Full local Chrome enrollment regressions pass; disposable native fresh setup and incorrect-checksum rejection remain pending.
+
+V2-WP0-availability regression qualified locally: TestTunnelHealthUsesAuthoritativeNodeAvailability reproduces three inconsistent node/tunnel states before the fix and passes afterward, with real PostgreSQL/signed connection; current fresh and old cases retained. TestOperationalPagesInBrowser/TestServerPagesInBrowser/TestSimpleEditorChrome also pass.

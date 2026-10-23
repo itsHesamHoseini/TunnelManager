@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,39 @@ import (
 	"testing"
 	"time"
 )
+
+func TestTunnelHealthUsesAuthoritativeNodeAvailability(t *testing.T) {
+	s, srv, client := testServer(t)
+	ctx := context.Background()
+	conn := fixtureNode(t, s, srv, client, ctx)
+	defer conn.CloseNow()
+	record := TunnelRecord{Instances: map[string]string{"live-fixture": "sample-instance"}}
+	raw := []byte(`{"at":"2026-10-23T00:00:00Z","transport":{"status":"passed"}}`)
+	for _, tc := range []struct {
+		name      string
+		approved  bool
+		age       time.Duration
+		telemetry string
+		stale     bool
+	}{
+		{"fresh", true, 0, `{"cpu_percent":12}`, false},
+		{"future", true, -time.Hour, `{"cpu_percent":12}`, true},
+		{"no telemetry", true, 0, `{}`, true},
+		{"approval revoked", false, 0, `{"cpu_percent":12}`, true},
+		{"old", true, 91 * time.Second, `{"cpu_percent":12}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := s.DB.Exec(ctx, "UPDATE nodes SET approved=$1,seen=$2,telemetry=$3 WHERE id='live-fixture'", tc.approved, time.Now().Add(-tc.age), []byte(tc.telemetry)); err != nil {
+				t.Fatal(err)
+			}
+			health := s.currentHealth(ctx, raw, record).(map[string]any)
+			stale, _ := health["stale"].(bool)
+			if stale != tc.stale {
+				t.Fatalf("node/tunnel availability disagrees: stale=%v want=%v", stale, tc.stale)
+			}
+		})
+	}
+}
 
 func TestObservationTruth(t *testing.T) {
 	now := time.Now()

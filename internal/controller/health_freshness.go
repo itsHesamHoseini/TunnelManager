@@ -14,8 +14,11 @@ func (s *Server) currentHealth(ctx context.Context, raw []byte, rec TunnelRecord
 	}
 	for node := range rec.Instances {
 		var seen *time.Time
-		s.DB.QueryRow(ctx, "SELECT seen FROM nodes WHERE id=$1", node).Scan(&seen)
-		if seen == nil || time.Since(*seen) > 90*time.Second || !s.isConnected(node) {
+		var approved bool
+		var telemetry []byte
+		err := s.DB.QueryRow(ctx, "SELECT approved,seen,telemetry FROM nodes WHERE id=$1", node).Scan(&approved, &seen, &telemetry)
+		online, _, _ := observationState(approved, s.isConnected(node), seen, telemetry, time.Now())
+		if err != nil || !online {
 			health["stale"] = true
 			health["freshness_reason"] = "node_offline_or_observation_stale"
 			break
