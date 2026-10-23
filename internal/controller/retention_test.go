@@ -70,3 +70,47 @@ func TestRetentionKeepsObservedAveragesAndGaps(t *testing.T) {
 		}
 	}
 }
+
+func TestDayHistoryIsBoundedMeasuredBucketsWithMissingValues(t *testing.T) {
+	s, _, _ := testServer(t)
+	ctx := context.Background()
+	s.DB.Exec(ctx, "INSERT INTO nodes(id,name,role,pubkey,approved)VALUES('day','Synthetic day','foreign',$1,true)", make([]byte, 32))
+	base := time.Now().UTC().Truncate(5 * time.Minute).Add(-time.Hour)
+	for i, offset := range []time.Duration{0, time.Minute, 5 * time.Minute, 20 * time.Minute, 25 * time.Hour} {
+		value := map[string]any{"ram_used": 100, "disk_free": 1000, "networks": []any{map[string]any{"primary": true, "rx_bytes_per_second": 1024, "tx_bytes_per_second": 2048}}}
+		if i != 2 {
+			value["cpu_percent"] = 20 + i*10
+		}
+		raw, _ := json.Marshal(value)
+		at := base.Add(offset)
+		if i == 4 {
+			at = base.Add(-offset)
+		}
+		if _, e := s.DB.Exec(ctx, "INSERT INTO measurements(node_id,at,data)VALUES('day',$1,$2)", at, raw); e != nil {
+			t.Fatal(e)
+		}
+	}
+	r := httptest.NewRequest("GET", "/api/nodes/day/history?days=1", nil)
+	r.SetPathValue("id", "day")
+	w := httptest.NewRecorder()
+	s.aggregateHistory(w, r)
+	var values []struct {
+		Aggregation string `json:"aggregation"`
+		Data        struct {
+			CPU     *float64 `json:"cpu_percent"`
+			Samples int      `json:"samples"`
+			RX      float64  `json:"rx_rate"`
+		} `json:"data"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &values) != nil || len(values) != 3 {
+		t.Fatal("24h query invented empty buckets, included old data, or failed")
+	}
+	if values[2].Data.CPU == nil || *values[2].Data.CPU != 25 || values[2].Data.Samples != 2 || values[1].Data.CPU != nil || values[0].Data.RX != 1024 {
+		t.Fatal("missing metric became zero or measured average/interface scope was lost")
+	}
+	for _, v := range values {
+		if v.Aggregation != "5 minutes" {
+			t.Fatal("aggregation contract missing")
+		}
+	}
+}

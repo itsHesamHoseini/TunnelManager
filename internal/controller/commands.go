@@ -305,6 +305,8 @@ func (s *Server) processJob(parent context.Context, id string) {
 		s.processTunnelAction(ctx, id, q)
 	case "tunnel-check":
 		s.processTunnelCheck(ctx, id, q)
+	case "entry-check":
+		s.processEntryCheck(ctx, id, q)
 	case "certificate":
 		s.processCertificate(ctx, id, q)
 	default:

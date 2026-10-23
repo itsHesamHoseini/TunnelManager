@@ -69,12 +69,53 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	}
 	id := secure.Token(12)
 	_, e = tx.Exec(ctx, "INSERT INTO nodes(id,name,role,pubkey,approved)VALUES($1,$2,$3,$4,$5)", id, name, role, pub, auto)
+	if e == nil {
+		_, e = tx.Exec(ctx, "UPDATE enrollment SET node_id=$1 WHERE hash=$2", id, secure.Hash(q.Token))
+	}
 	if e != nil || tx.Commit(ctx) != nil {
 		fail(w, 503, "busy", "Try again.", "دوباره تلاش کنید.")
 		return
 	}
 	s.Audit(ctx, "node-enroll", id, "pending")
 	write(w, map[string]any{"node_id": id, "approved": auto, "protocol": protocol.Version})
+}
+func (s *Server) enrollmentStatus(w http.ResponseWriter, r *http.Request) {
+	var q struct{ Token string }
+	if !decode(w, r, &q) {
+		return
+	}
+	if len(q.Token) < 20 || len(q.Token) > 200 {
+		fail(w, 400, "invalid_enrollment", "Generate a new enrollment.", "ثبت تازه بسازید.")
+		return
+	}
+	var expires time.Time
+	var consumed bool
+	var node *string
+	if e := s.DB.QueryRow(r.Context(), "SELECT expires,consumed,node_id FROM enrollment WHERE hash=$1", secure.Hash(q.Token)).Scan(&expires, &consumed, &node); e != nil {
+		fail(w, 404, "invalid_enrollment", "Generate a new enrollment.", "ثبت تازه بسازید.")
+		return
+	}
+	result := map[string]any{"expires": expires, "expired": time.Now().After(expires), "consumed": consumed, "stage": "waiting"}
+	if node != nil {
+		var name string
+		var pub []byte
+		var approved bool
+		var seen *time.Time
+		var data []byte
+		if e := s.DB.QueryRow(r.Context(), "SELECT name,pubkey,approved,seen,COALESCE(telemetry,'{}') FROM nodes WHERE id=$1", *node).Scan(&name, &pub, &approved, &seen, &data); e != nil {
+			fail(w, 409, "enrolled_node_missing", "This enrolled server is no longer listed.", "سرور ثبت‌شده دیگر در فهرست نیست؛ ثبت تازه بسازید.")
+			return
+		}
+		result["node"] = map[string]any{"id": *node, "name": name, "fingerprint": secure.Fingerprint(pub), "approved": approved, "seen": seen}
+		result["stage"] = "identity_received"
+		if approved {
+			result["stage"] = "approved"
+			if online, _, _ := observationState(true, s.isConnected(*node), seen, data, time.Now()); online {
+				result["stage"] = "observing"
+			}
+		}
+	}
+	write(w, result)
 }
 func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 	rows, e := s.DB.Query(r.Context(), "SELECT id,name,role,approved,seen,reconnects,COALESCE(telemetry,'{}'),metadata,pubkey,revision FROM nodes ORDER BY name")

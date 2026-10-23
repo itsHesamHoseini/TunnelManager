@@ -37,8 +37,12 @@ func TestMain(m *testing.M) {
 				os.Exit(1)
 			}
 			os.Exit(0)
-		case "backend":
-			http.ListenAndServe("0.0.0.0:29096", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "lab-response") }))
+		case "backend", "backend-alt":
+			port := "29096"
+			if os.Args[1] == "backend-alt" {
+				port = "29097"
+			}
+			http.ListenAndServe("0.0.0.0:"+port, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "lab-response") }))
 			os.Exit(1)
 		case "execute":
 			b, e := os.ReadFile("/lab/request.json")
@@ -59,6 +63,12 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 func TestNativeBackhaul(t *testing.T) {
+	runNativeBackhaul(t, false)
+}
+func TestNativeOrdinaryEditFailureMatrix(t *testing.T) {
+	runNativeBackhaul(t, true)
+}
+func runNativeBackhaul(t *testing.T, matrix bool) {
 	if os.Getenv("CI") != "true" || os.Getenv("TUNNELMANAGER_NATIVE_LAB") != "1" {
 		t.Skip("requires isolated CI systemd containers")
 	}
@@ -101,6 +111,9 @@ func TestNativeBackhaul(t *testing.T) {
 		}
 		ips[node] = strings.TrimSpace(string(run("inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", node)))
 		run("exec", node, "systemd-run", "--unit=lab-backend", "/lab/nodeops.test", "backend")
+		if matrix {
+			run("exec", node, "systemd-run", "--unit=lab-backend-alt", "/lab/nodeops.test", "backend-alt")
+		}
 	}
 	sequence := 0
 	call := func(node, kind string, payload any) protocol.Result {
@@ -184,6 +197,76 @@ func TestNativeBackhaul(t *testing.T) {
 			}
 			change(name+"_create", spec, true)
 			checkHTTP(spec.Routes[1].User.Port)
+			if matrix {
+				// Fixed synthetic certificate setup is test infrastructure only.
+				// No private bytes enter output, requests or artifact screenshots.
+				run("exec", a, "mkdir", "-p", "/etc/tunnelmanager-agent/certificates/matrix")
+				run("exec", a, "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=matrix.example.com", "-keyout", "/etc/tunnelmanager-agent/certificates/matrix/key.pem", "-out", "/etc/tunnelmanager-agent/certificates/matrix/cert.pem")
+				run("exec", a, "chmod", "600", "/etc/tunnelmanager-agent/certificates/matrix/key.pem")
+				for _, edit := range []string{"user_port", "destination", "token", "transport"} {
+					proposed := spec
+					proposed.Routes = append([]engine.Route{}, spec.Routes...)
+					switch edit {
+					case "user_port":
+						proposed.Routes[0].User.Port += 100
+					case "destination":
+						proposed.Routes[0].Backend = engine.Endpoint{Host: "localhost", Port: 29097}
+					case "token":
+						proposed.Token = "synthetic-matrix-rotated-auth"
+					case "transport":
+						proposed.Transport = "wss"
+						proposed.Certificate = "matrix"
+						proposed.AllowUnverifiedTLS = true
+					}
+					protected := func() string {
+						value := ""
+						for _, node := range nodes {
+							value += string(run("exec", node, "sha256sum", "/etc/tunnelmanager-agent/instances/"+instance[node]+".toml")) + string(run("exec", node, "systemctl", "show", "tunnelmanager-instance-"+instance[node]+".service", "-p", "MainPID"))
+						}
+						return value
+					}
+					before := protected()
+					blocked := call(b, "change.preflight", Change{ID: "matrix_" + edit + "_blocked", Instance: instance[b], Role: "client", ExpectedHash: "stale-synthetic-hash", Spec: proposed})
+					if blocked.OK || blocked.Code != "config_revision_conflict" || protected() != before {
+						t.Fatal("preflight rejection changed real configuration or process")
+					}
+					change("matrix_"+edit+"_apply", proposed, true)
+					change("matrix_"+edit+"_manual_restore", spec, true)
+					checkHTTP(spec.Routes[0].User.Port)
+					id := "matrix_" + edit + "_partial"
+					for _, node := range nodes {
+						role := "server"
+						if node == b {
+							role = "client"
+						}
+						require(node, "change.prepare", Change{ID: id, Instance: instance[node], Name: name, Role: role, ExpectedHash: hashes[node], Spec: proposed, Deadline: time.Now().Add(5 * time.Minute)})
+						run("exec", node, "test", "-s", "/var/lib/tunnelmanager-agent/backups/"+id+".toml")
+					}
+					require(a, "change.activate", map[string]any{"ID": id, "Deadline": time.Now().Add(90 * time.Second)})
+					failed := call(b, "change.activate", map[string]any{"ID": id, "Deadline": time.Now().Add(-time.Second)})
+					if failed.OK {
+						t.Fatal("injected second-peer activation failure was accepted")
+					}
+					// Both executor processes are absent. The actual server timer must
+					// restore locally, without a controller or a polling rollback call.
+					time.Sleep(95 * time.Second)
+					raw := run("exec", a, "cat", "/var/lib/tunnelmanager-agent/changes/"+id+".json")
+					var journal Journal
+					if json.Unmarshal(raw, &journal) != nil || journal.Phase != "reverted" {
+						t.Fatal("90-second local timer did not restore partial edit")
+					}
+					require(b, "change.rollback", map[string]string{"ID": id})
+					for _, node := range nodes {
+						current := run("exec", node, "cat", "/etc/tunnelmanager-agent/instances/"+instance[node]+".toml")
+						if engine.Digest(current) != hashes[node] {
+							t.Fatal("partial rollback did not preserve baseline on both peers")
+						}
+					}
+					checkHTTP(spec.Routes[0].User.Port)
+					t.Logf("Native ordinary %s: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer", edit)
+				}
+				return
+			}
 			// The executor has exited between every command; the real engine data plane persists.
 			time.Sleep(2 * time.Second)
 			checkHTTP(spec.Routes[0].User.Port)

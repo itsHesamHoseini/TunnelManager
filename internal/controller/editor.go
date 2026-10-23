@@ -57,8 +57,8 @@ func settingChanges(old *engine.Spec, next engine.Spec) []SettingChange {
 	for _, route := range next.Routes {
 		prior, found := previous[route.ID]
 		name := route.Name
-		if name == "" {
-			name = route.ID
+		if name == route.ID {
+			name = ""
 		}
 		if !found {
 			changes = append(changes, SettingChange{Kind: "mapping_added", Route: name, After: route})

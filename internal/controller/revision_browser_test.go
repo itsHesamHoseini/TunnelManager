@@ -38,6 +38,13 @@ func TestRevisionHonestyBrowser(t *testing.T) {
 	s.Audit(ctx, "operation-failed", "disconnected", "inventory · node_offline")
 	s.Audit(ctx, "unknown_internal_event", "missing", "unknown_private_reason")
 	s.DB.Exec(ctx, "INSERT INTO alerts(rule,target,severity,code)VALUES('offline','stale','warning','node_observation_stale')")
+	base := time.Now().UTC().Truncate(5 * time.Minute).Add(-time.Hour)
+	for _, offset := range []time.Duration{0, 5 * time.Minute, 20 * time.Minute, 25 * time.Minute} {
+		s.DB.Exec(ctx, "INSERT INTO measurements(node_id,at,data)VALUES('disconnected',$1,'{\"cpu_percent\":40,\"ram_used\":50,\"disk_free\":70}')", base.Add(offset))
+	}
+	if e := s.retain(ctx); e != nil {
+		t.Fatal(e)
+	}
 	if os.Getenv("TUNNELMANAGER_REVISION_BEFORE") != "1" {
 		for _, name := range []string{"backhaul", retiredEngineName} {
 			id, title, instance := "supported_sample", "نمونه تونل ایران به خارج", "supported_instance"

@@ -256,7 +256,7 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, e)
 		return
 	}
-	write(w, map[string]string{"operation_id": op, "tunnel_id": id})
+	write(w, map[string]any{"operation_id": op, "tunnel_id": id, "preview_spec": engine.Public(payload.Spec)})
 }
 func (s *Server) planTransition(w http.ResponseWriter, r *http.Request) {
 	var q struct {

@@ -23,6 +23,9 @@ func TestRetirementMixedDatabaseBackupAndDependencies(t *testing.T) {
 		}
 	}
 	var keptCipher []byte
+	if _, e := s.DB.Exec(ctx, "INSERT INTO enrollment(hash,expires,name,role,consumed,node_id)VALUES('synthetic-linked-enrollment',now()+interval '1 minute','Synthetic','iran',true,'entry')"); e != nil {
+		t.Fatal(e)
+	}
 	for _, engineName := range []string{retiredEngineName, "backhaul"} {
 		id := "retired"
 		instance := "retired_instance"
@@ -141,6 +144,10 @@ func TestRetirementMixedDatabaseBackupAndDependencies(t *testing.T) {
 		t.Fatal(e)
 	}
 	var restoredCount int
+	var restoredNode string
+	if e = restored.DB.QueryRow(ctx, "SELECT node_id FROM enrollment WHERE hash='synthetic-linked-enrollment'").Scan(&restoredNode); e != nil || restoredNode != "entry" {
+		t.Fatal("restored enrollment identity link missing")
+	}
 	if e = restored.DB.QueryRow(ctx, "SELECT count(*) FROM tunnels").Scan(&restoredCount); e != nil || restoredCount != 2 {
 		t.Fatal("restored mixed rows missing")
 	}

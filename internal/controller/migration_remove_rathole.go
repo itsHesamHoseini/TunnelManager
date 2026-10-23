@@ -23,7 +23,7 @@ type RetirementReport struct {
 	Backup         string `json:"backup"`
 }
 
-var ownedTables = []string{"schema_version", "admins", "recovery", "sessions", "challenges", "auth_failures", "audit", "settings", "enrollment", "nodes", "measurements", "measurement_rollups", "node_usage", "tunnels", "tunnel_versions", "operations", "commands", "port_reservations", "certificates", "certificate_links", "alerts", "checks", "recovery_rules", "telegram_actions", "telegram_cursor"}
+var ownedTables = []string{"schema_version", "admins", "recovery", "sessions", "challenges", "auth_failures", "audit", "settings", "nodes", "enrollment", "measurements", "measurement_rollups", "node_usage", "tunnels", "tunnel_versions", "operations", "commands", "port_reservations", "certificates", "certificate_links", "alerts", "checks", "recovery_rules", "telegram_actions", "telegram_cursor"}
 
 // RetireEngine is called before starting command delivery. backupPath must be a
 // new absolute file, outside PostgreSQL storage. The caller retains master.key
@@ -381,7 +381,7 @@ func retirementPendingMutations(ctx context.Context, tx pgx.Tx, key []byte) erro
 		if armed {
 			return errors.New("finish_pending_operations_before_engine_retirement")
 		}
-		if kind == "tunnel-check" || kind == "adoption-preview" {
+		if kind == "tunnel-check" || kind == "adoption-preview" || kind == "entry-check" {
 			continue
 		}
 		if kind == "node" {

@@ -259,6 +259,7 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("POST /api/settings/telegram-test", s.telegramTest)
 	private.HandleFunc("GET /api/nodes", s.nodes)
 	private.HandleFunc("POST /api/nodes/token", s.nodeToken)
+	private.HandleFunc("POST /api/nodes/enrollment-status", s.enrollmentStatus)
 	private.HandleFunc("GET /api/nodes/{id}", s.nodeDetail)
 	private.HandleFunc("PUT /api/nodes/{id}", s.nodeUpdate)
 	private.HandleFunc("POST /api/nodes/{id}/approve", s.nodeApprove)
@@ -267,6 +268,7 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("GET /api/engines", s.engineCatalog)
 	private.HandleFunc("GET /api/backhaul-options", s.backhaulOptions)
 	private.HandleFunc("GET /api/adoption-report", s.adoptionReport)
+	private.HandleFunc("POST /api/tunnels/{id}/entry-check", s.entryCheck)
 	private.HandleFunc("POST /api/tunnels/{id}/adoption-preview", s.adoptionPreview)
 	private.HandleFunc("POST /api/tunnel-drafts/normalize", s.normalizeDraft)
 	private.HandleFunc("GET /api/operations", s.operationList)
@@ -341,7 +343,10 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		if s.limited(w, r, "session:"+secure.Hash(c.Value), 3, 60) {
 			return
 		}
-		if r.Method != "GET" && s.limited(w, r, "sensitive:"+secure.Hash(c.Value), .2, 5) {
+		// The status POST is read-only; the token stays out of URL/access logs.
+		// Keep authentication, origin and general session/IP limits in force.
+		readOnlyEnrollmentStatus := r.Method == "POST" && r.URL.Path == "/api/nodes/enrollment-status"
+		if r.Method != "GET" && !readOnlyEnrollmentStatus && s.limited(w, r, "sensitive:"+secure.Hash(c.Value), .2, 5) {
 			return
 		}
 		next.ServeHTTP(w, r)

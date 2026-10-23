@@ -34,7 +34,7 @@ Build machine: Node 24, Go 1.27.3. Target: static binary and systemd; controller
 ## Security and limits
 Password + mandatory TOTP/recovery, hashed sessions, origin checks, edge/application limits, encrypted durable jobs/secrets and a master key outside PostgreSQL. Agents accept typed bounded actions only; no shell/web terminal. This outbound-agent architecture does not use or modify SSH.
 
-Unsupported versions, mappings and identity/proxy semantics remain visible/read-only with a reason. Backhaul 0.7.2 WSS encrypts but does not verify peer certificate identity: explicit acknowledgement is required. Independent panel TLS probes are stricter and do not change engine behavior. retired engine (removed by owner) Noise uses a selected peer key; TLS uses explicit certificate trust.
+Unsupported versions, mappings and identity/proxy semantics remain visible/read-only with a reason. Backhaul 0.7.2 WSS encrypts but does not verify peer certificate identity: explicit acknowledgement is required. Independent panel TLS probes are stricter and do not change engine behavior.
 
 Counters describe the observed host interface, not per-tunnel usage or complete billing. Missing observations are not fabricated. VLESS application health stays unconfigured without a matching application check; TCP success is insufficient. No application users/inbounds/subscriptions are managed. Live CA/DNS/Telegram provider delivery is untested without owner accounts.
 

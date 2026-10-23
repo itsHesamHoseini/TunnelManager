@@ -15,8 +15,8 @@ export function isNodeOnline(node: ObservedNode, now = Date.now()) {
 }
 export function nodeReason(node: ObservedNode) {
  if (!node.approved) return localized('Compare this server’s identity before approval.', 'هویت این سرور را مقایسه و سپس تأیید کنید.');
- if (!node.seen || !Object.keys(node.telemetry || {}).length) return localized('No observations received. Check the agent on this server; its cause is not yet verified.', 'هنوز داده‌ای از این سرور نرسیده؛ عامل همین سرور را بررسی کنید. علت هنوز بررسی نشده است.');
- if (!node.connected) return localized('The agent connection is lost. Check its connection and logs; a stopped service is not established.', 'ارتباط عامل قطع است؛ اتصال و لاگ عامل را بررسی کنید. متوقف‌بودن سرویس هنوز اثبات نشده است.');
+ if (!node.seen || !Object.keys(node.telemetry || {}).length) return localized('No observations received. Inspect this server’s agent.', 'هنوز داده‌ای نرسیده؛ عامل همین سرور را بررسی کنید.');
+ if (!node.connected) return localized('The agent connection is lost. Check its connection and logs.', 'ارتباط عامل قطع است؛ اتصال و لاگ آن را بررسی کنید.');
  if (!isNodeOnline(node)) return localized('The agent is not sending fresh observations. Check its logs and retry.', 'عامل دادهٔ تازه نمی‌فرستد؛ لاگ آن را بررسی و دوباره تلاش کنید.');
  return localized('Fresh server observation; tunnel health is checked separately.', 'دادهٔ تازهٔ سرور دریافت شده؛ سلامت تونل جدا بررسی می‌شود.');
 }
@@ -65,7 +65,7 @@ export function ResourceValue({value, node, suffix = '%'}: {value?: number | nul
  const level = current ? resourceLevel(value) : 'unknown';
  const label = level === 'critical' ? localized('Critical', 'بحرانی') : level === 'high' ? localized('High', 'بالا') : level === 'normal' ? localized('Normal', 'عادی') : localized('Not current', 'وضعیت فعلی نامعلوم');
  return <div className={`resource-value resource-${level} ${current ? 'resource-current' : 'resource-historical'}`}>
-  <span><bdi>{valid ? new Intl.NumberFormat(language === 'fa' ? 'fa-IR' : 'en-GB', {maximumFractionDigits:0}).format(value!) + suffix : '—'}</bdi> <span className="resource-label">{label}</span></span>
+  <span><bdi>{valid ? new Intl.NumberFormat(language === 'fa' ? 'fa-IR' : 'en-GB', {maximumFractionDigits:1}).format(value!) + suffix : '—'}</bdi> <span className="resource-label">{label}</span></span>
   {current && <progress max={100} value={Math.min(100, value!)} aria-label={label}/>}
   {!current && valid && <small>{localized('Last value', 'آخرین مقدار')} <Timestamp at={node.seen}/></small>}
  </div>;

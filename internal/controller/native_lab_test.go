@@ -263,6 +263,26 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	for _, kind := range []string{"tcp", "tls"} {
+		status, body := request(t, client, srv.URL+"/api/tunnels/"+originalID+"/entry-check", "POST", map[string]any{"RequestKey": "native_entry_" + kind, "ExpectedRevision": rev, "Mapping": original.Spec.Routes[0].ID, "Kind": kind})
+		if status != 200 {
+			t.Fatal("native entry check rejected")
+		}
+		id := body["operation_id"].(string)
+		wait(id)
+		var result []byte
+		s.DB.QueryRow(ctx, "SELECT result FROM operations WHERE id=$1", id).Scan(&result)
+		var observed map[string]any
+		json.Unmarshal(result, &observed)
+		expected := "passed"
+		if kind == "tls" {
+			expected = "failed"
+		} // Actual backend is HTTP, not TLS.
+		if observed["entry_check"] != true || observed["status"] != expected || observed["source"] != original.Spec.Dialer || observed["target"] != net.JoinHostPort(original.Spec.TransportRemote.Host, strconv.Itoa(original.Spec.Routes[0].User.Port)) {
+			t.Fatal("native entry check did not retain actual scope/result")
+		}
+	}
+	t.Log("Actual user entry TCP passed from destination peer; strict TLS to the HTTP backend failed as expected. Neither result asserts VLESS health.")
 	for _, version := range []int64{1, 2} {
 		applyPlan(map[string]any{"RequestKey": fmt.Sprintf("native_version_%d", version), "Tunnel": originalID, "Name": "Synthetic native backhaul tcp", "Spec": original.Spec, "ExpectedRevision": rev, "RevertRevision": version})
 		_, rev, _, _ = s.readTunnel(ctx, originalID)
@@ -412,6 +432,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		wait(op)
 	}
 	sharedIDs := []string{}
+	adoptedVersions := map[string]int64{}
 	for _, entry := range []struct{ unit, name string }{{"synthetic-shared-first.service", "Synthetic shared first"}, {"synthetic-shared-second.service", "Synthetic shared second"}} {
 		var inventory []byte
 		s.DB.QueryRow(ctx, "SELECT inventory FROM nodes WHERE id=$1", ids[1]).Scan(&inventory)
@@ -469,6 +490,15 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		if protected() != before {
 			t.Fatal("adoption changed configuration or process identity")
 		}
+		_, adoptedVersions[id], _, e = s.readTunnel(ctx, id)
+		if e != nil {
+			t.Fatal(e)
+		}
+		var savedVersion bool
+		s.DB.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM tunnel_versions WHERE tunnel_id=$1 AND revision=$2)", id, adoptedVersions[id]).Scan(&savedVersion)
+		if !savedVersion {
+			t.Fatal("exact adopted baseline was not saved")
+		}
 		sharedIDs = append(sharedIDs, id)
 	}
 	for index, id := range sharedIDs {
@@ -495,7 +525,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	applyPlan(map[string]any{"RequestKey": "native_restore_adopted_baseline", "Tunnel": sharedIDs[0], "Name": "Synthetic shared first", "Spec": first.Spec, "ExpectedRevision": revision, "RevertRevision": 2})
+	applyPlan(map[string]any{"RequestKey": "native_restore_adopted_baseline", "Tunnel": sharedIDs[0], "Name": "Synthetic shared first", "Spec": first.Spec, "ExpectedRevision": revision, "RevertRevision": adoptedVersions[sharedIDs[0]]})
 	for _, port := range []string{"24843", "24844"} {
 		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+port+"/probe',timeout=5).read()")
 	}

@@ -11,11 +11,14 @@ try{
  const ctx=await browser.newContext({ignoreHTTPSErrors:true});const page=await ctx.newPage();const exceptions=[];page.on('pageerror',e=>exceptions.push(e.message));
  await page.goto(url);await page.getByLabel('Username').fill('testadmin');await page.getByLabel('Password',{exact:true}).fill('Synthetic-Password-2026!');await page.getByRole('button',{name:'Continue',exact:true}).click();await page.locator('.private').waitFor();await page.getByLabel('Code',{exact:true}).fill(totp(await page.locator('.private').innerText()));await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'I saved them'}).click();await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'فارسی',exact:true}).click();
  const nav=name=>page.locator('nav').getByRole('button',{name,exact:true});
- for(const [width,height] of [[1448,1086],[1920,1086],[390,844]]){
+ for(const [width,height] of [[1280,1086],[1448,1086],[1920,1086],[390,844]]){
   await page.setViewportSize({width,height});await nav('نمای کلی').click();await page.locator('.server-table').waitFor();
   await page.evaluate(()=>{if(document.querySelector('#sample-label'))return;const x=document.createElement('div');x.id='sample-label';x.textContent='نمونهٔ آزمایشی محلی — داده‌های ساختگی برای آزمون رابط';x.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fff2ca;color:#3f3100;text-align:center;font:12px sans-serif;padding:3px';document.body.append(x)});
   await page.screenshot({path:`${output}/wp0-overview-sample-${width}.png`,fullPage:true});
   if(!before){
+   await page.getByRole('heading',{name:'الان چه نیاز به اقدام دارد؟',exact:true}).waitFor();
+   if(await page.locator('.home-topology').evaluate(x=>x.open))throw Error('Topology dominates the default home');
+   await page.screenshot({path:`${output}/wp5-home-sample-${width}.png`,fullPage:true});
    const reported=await ctx.request.get(url+'/api/nodes').then(r=>r.json());
    const metric=page.locator('.console-metric').filter({has:page.getByText('عامل‌های متصل',{exact:true})});
    if(Number(await metric.locator('b').innerText())!==reported.filter(n=>n.online).length)throw Error('Online card disagrees with authoritative node state');
@@ -48,7 +51,12 @@ try{
   await page.evaluate(()=>{const x=document.createElement('div');x.id='sample-label';x.textContent='نمونهٔ آزمایشی محلی — داده‌های ساختگی برای آزمون رابط';x.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fff2ca;color:#3f3100;text-align:center;font:12px sans-serif;padding:3px';document.body.append(x)});
   await page.setViewportSize({width:1448,height:1086});await nav('سرورها').click();await page.getByRole('button',{name:'نمونه خارج قطع',exact:true}).click();
   if(await page.locator('.server-summary .resource-current').count())throw Error('Summary reused stale current values');
+  const chart=page.locator('.server-summary .observed-history');await chart.getByRole('img').waitFor();await chart.locator('polyline').first().waitFor({state:'attached'});if(await chart.locator('[data-measured-segment]').count()!==2)throw Error('24h chart connected a missing interval or dropped contiguous averages');await page.screenshot({path:`${output}/wp6-gapped-history-sample.png`,fullPage:true});
+  const historyRequests=[];page.on('request',r=>{if(r.url().includes('/history'))historyRequests.push(new URL(r.url()).pathname+new URL(r.url()).search)});
+  try{await Promise.all([page.waitForResponse(r=>r.url().endsWith('/history?days=7'),{timeout:8000}),page.getByLabel('بازهٔ تاریخچه',{exact:true}).selectOption('7')])}catch(e){await page.screenshot({path:output+'/wp6-failure-sample.png',fullPage:true});throw Error('history range: '+JSON.stringify({requests:historyRequests,visible:await page.evaluate(()=>document.visibilityState),page:await page.locator('main').innerText()}))}await chart.locator('circle').first().waitFor();await page.screenshot({path:`${output}/wp6-week-history-sample.png`,fullPage:true});
   await page.getByRole('button',{name:'بازکردن ابزارهای سرور',exact:true}).click();await page.getByRole('heading',{name:'نمونه خارج قطع',exact:true}).waitFor();
+  await page.locator('main').getByRole('button',{name:'نمای کلی',exact:true}).click();
+  await page.getByText('شمارندهٔ رابط سرور؛ مصرف اختصاصی تونل یا صورتحساب نیست.',{exact:true}).waitFor();
   if(await page.locator('.summary .resource-current').count())throw Error('Node details reused stale values');
   await page.screenshot({path:`${output}/wp0-disconnected-detail-sample.png`,fullPage:true});
   await nav('نمای کلی').click();await page.route('**/api/nodes',route=>route.abort());
@@ -57,6 +65,8 @@ try{
   if(await page.locator('.server-table .status.success').count())throw Error('Failed refresh left online status');
   if(await page.locator('.server-table .resource-current').count())throw Error('Failed refresh left current resources');
   await page.screenshot({path:`${output}/wp0-api-error-sample.png`,fullPage:true});
+  await page.unroute('**/api/nodes');
+  await nav('نمای کلی').click();const item=page.locator('.action-priorities li').filter({has:page.getByText('نمونه خارج قطع',{exact:true})});await item.getByRole('button',{name:'بررسی سرور',exact:true}).click();await page.getByRole('heading',{name:'نمونه خارج قطع',exact:true}).waitFor();console.log(JSON.stringify({daily_task:'find disconnected server and inspect cause',buttonClicks:1,scope:'actual sample Chrome, from home contextual action'}));
  }
  if(exceptions.length)throw exceptions[0];
  console.log(JSON.stringify({scope:'sample UI with real Chrome and isolated Go/PostgreSQL authentication',before,widths:[1448,1920,390],screenshots:output,assertions:before?'baseline captures only':'offline/missing/API-failure resources, messages, time isolation, desktop layout'}));
