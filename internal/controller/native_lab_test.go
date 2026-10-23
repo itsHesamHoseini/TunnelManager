@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 			t.Fatal(e)
 		}
 		run("exec", node, "systemd-run", "--unit=lab-backend", "python3", "-m", "http.server", "29096", "--bind", "127.0.0.1", "--directory", "/lab/public")
+		run("exec", node, "systemd-run", "--unit=lab-backend-alt", "python3", "-m", "http.server", "29097", "--bind", "127.0.0.1", "--directory", "/lab/public")
 	}
 	for _, id := range ids {
 		ready := false
@@ -482,6 +484,10 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		t.Fatal(e)
 	}
 	tlsInstance := tlsRecord.Instances[ids[0]]
+	tlsUserPorts := []string{}
+	for _, route := range tlsRecord.Spec.Routes {
+		tlsUserPorts = append(tlsUserPorts, strconv.Itoa(route.User.Port))
+	}
 	intent := func(action, suffix string) {
 		payload, _ := json.Marshal(map[string]any{"ID": tlsInstance, "Action": action, "ExpectedHash": tlsRecord.Hashes[ids[0]], "Confirm": true})
 		job, err := s.newJob(ctx, "native_tls_"+suffix, "node", ids[0], "TLS consumer "+action, JobPayload{Node: ids[0], Kind: "instance.action", Payload: payload})
@@ -515,7 +521,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	}
 	run("exec", nodes[1], "sh", "-c", "test ! -e /etc/tunnelmanager-agent/certificates/native_tls/key.pem")
 	intent("start", "start_after_renewal")
-	for _, p := range []string{"24463", "24473"} {
+	for _, p := range tlsUserPorts {
 		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+p+"/probe',timeout=5).read()")
 	}
 	t.Log("Real self-signed TLS/WSS issuance, deployment, linked renewal and automatic coordinated rotation passed; stopped consumer and client private-key isolation preserved")
@@ -558,7 +564,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	certificateStep("activate", nodeops.Certificate{Deadline: time.Now().Add(30 * time.Second)})
 	run("exec", nodes[0], "systemctl", "stop", "tunnelmanager-agent")
 	time.Sleep(35 * time.Second)
-	for _, p := range []string{"24463", "24473"} {
+	for _, p := range tlsUserPorts {
 		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+p+"/probe',timeout=5).read()")
 	}
 	run("exec", nodes[0], "systemctl", "start", "tunnelmanager-agent")
@@ -643,5 +649,5 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		run("exec", node, "systemctl", "stop", "tunnelmanager-agent")
 	}
 	run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":24543/probe',timeout=5).read()")
-	t.Log("Real controller/PostgreSQL/browser -> signed outbound TLS agents -> two Linux systemd peers and both engines passed; data plane works with both agents stopped")
+	t.Log("Real controller/PostgreSQL/browser -> signed outbound TLS agents -> two Linux systemd peers and Backhaul TCP/WSS passed; data plane works with both agents stopped")
 }
