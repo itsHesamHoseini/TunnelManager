@@ -18,7 +18,7 @@ try{
   if(!before){
    await page.getByRole('heading',{name:'الان چه نیاز به اقدام دارد؟',exact:true}).waitFor();
    if(await page.locator('.home-topology').evaluate(x=>x.open))throw Error('Topology dominates the default home');
-   await page.screenshot({path:`${output}/wp5-home-sample-${width}.png`,fullPage:true});
+   await page.screenshot({path:`${output}/wp5-home-sample-${width}.png`,fullPage:true});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:`${output}/wp5-home-viewport-sample-${width}.png`,fullPage:false});
    const reported=await ctx.request.get(url+'/api/nodes').then(r=>r.json());
    const metric=page.locator('.console-metric').filter({has:page.getByText('عامل‌های متصل',{exact:true})});
    if(Number(await metric.locator('b').innerText())!==reported.filter(n=>n.online).length)throw Error('Online card disagrees with authoritative node state');

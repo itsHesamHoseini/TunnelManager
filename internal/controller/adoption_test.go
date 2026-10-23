@@ -117,6 +117,8 @@ func TestAdoptionDryRunAndReportPreserveInfrastructureBoundary(t *testing.T) {
 	unknown := left
 	unknown.ID = "unknown_version"
 	unknown.Version = "not-verified"
+	unknown.Parsed.Bind = "0.0.0.0:28200"
+	unknown.Parsed.Routes = []engine.Route{{ID: "observed_readonly", User: engine.Endpoint{Host: "0.0.0.0", Port: 24445}, Backend: engine.Endpoint{Host: "127.0.0.1", Port: 2096}, Protocol: "tcp"}}
 	unpaired := right
 	unpaired.ID = "unpaired_client"
 	inventory, _ := json.Marshal(map[string]any{"instances": []nodeops.Discovered{left, unknown, unpaired}})
