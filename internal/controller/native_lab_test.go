@@ -103,15 +103,22 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		run("cp", binary, node+":/lab/tunnelmanager")
 		run("cp", ca, node+":/lab/controller.crt")
 		run("cp", ca, node+":/usr/local/share/ca-certificates/tm-lab-controller.crt")
-		run("exec", node, "update-ca-certificates")
 		run("exec", node, "chmod", "700", "/lab/tunnelmanager")
+		bootReady := false
 		for attempt := 0; attempt < 30; attempt++ {
 			b, _ := exec.CommandContext(ctx, "docker", "exec", node, "systemctl", "is-system-running").Output()
 			if strings.Contains(string(b), "running") || strings.Contains(string(b), "degraded") {
+				bootReady = true
 				break
 			}
 			time.Sleep(time.Second)
 		}
+		if !bootReady {
+			t.Fatal("disposable peer boot did not settle before bootstrap")
+		}
+		// Initial systemd-tmpfiles cleanup must finish before the CA updater
+		// creates its /tmp working files. Do not bypass curl's trust checks.
+		run("exec", node, "update-ca-certificates")
 		token, e := s.CreateEnrollment(ctx, []string{"Synthetic Linux listener", "Synthetic Linux dialer"}[i], []string{"iran", "foreign"}[i], false)
 		if e != nil {
 			t.Fatal(e)
