@@ -16,7 +16,7 @@ const title=(p:string)=>tr(pages[p][0],pages[p][1]);
 const online=(node:any)=>isNodeOnline(node);
 const health=tunnelState;
 const size=(n:any)=>n==null?'—':n>1073741824?(n/1073741824).toFixed(1)+' GiB':(n/1048576).toFixed(0)+' MiB';
-const freshDiscovery=(d:any)=>d?.at&&Date.now()-Date.parse(d.at)<300000;
+const freshDiscovery=(d:any)=>{const age=Date.now()-Date.parse(d?.at);return !d?.stale&&Number.isFinite(age)&&age>=0&&age<300000};
 const percent=(n:any)=>typeof n==='number'?n.toFixed(0)+'%':'—';
 function Empty({children}:{children:React.ReactNode}) {return <div className="console-empty"><IconRadar size={30}/><p>{children}</p></div>}
 function Metric({label,value,icon:Icon=IconServer,hint,tone='teal'}:any){return <div className="console-metric"><div><strong>{label}</strong><b>{value}</b>{hint&&<small>{hint}</small>}</div><span className={'metric-icon '+tone}><Icon size={23} stroke={1.6}/></span></div>}

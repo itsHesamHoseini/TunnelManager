@@ -78,6 +78,19 @@ try{
   if(/operation-failed|unknown_internal_event|unknown_private_reason|inventory · node_offline/.test(auditText))throw Error('Raw audit codes leaked on the security page');
   await page.screenshot({path:output+'/wp0-audit-sample.png',fullPage:true});
   await nav('نمای کلی').click();const failedTunnel=page.locator('.action-priorities li').filter({has:page.getByText('نمونه تونل ایران به خارج',{exact:true})});await failedTunnel.getByRole('button',{name:'بررسی تونل',exact:true}).click();await page.getByRole('heading',{name:'نمونه تونل ایران به خارج',exact:true}).waitFor();await page.locator('.healthstrip .danger').waitFor();console.log(JSON.stringify({daily_task:'find failed tunnel and inspect failed layer',buttonClicks:1,scope:'sample UI; actual Go/PostgreSQL/signed telemetry and Chrome, synthetic failed application receipt; not engine failure evidence'}));
+  await page.clock.setFixedTime(new Date());
+  await page.route('**/api/tunnels/supported_sample',route=>route.abort());
+  await Promise.all([page.waitForEvent('requestfailed',{predicate:r=>r.url().endsWith('/api/tunnels/supported_sample')}),page.clock.runFor(5000)]);await page.getByRole('alert').last().waitFor();
+  if(await page.locator('.healthstrip .success').count())throw Error('Tunnel detail kept green layers after its API refresh failed');
+  await page.screenshot({path:output+'/wp0-tunnel-refresh-error-sample.png',fullPage:true});await page.unroute('**/api/tunnels/supported_sample');
+  await nav('سرویس‌ها').click();const service=page.getByRole('row').filter({has:page.getByRole('button',{name:'نمونه سرویس مدیریت‌پذیر',exact:true})});await service.locator('.status.success').waitFor();
+  await page.route('**/api/discoveries',route=>route.abort());await Promise.all([page.waitForEvent('requestfailed',{predicate:r=>r.url().endsWith('/api/discoveries')}),page.clock.runFor(15000)]);await page.getByRole('alert').first().waitFor();
+  if(await service.locator('.status.success').count())throw Error('Global service inventory kept green process after its API refresh failed');
+  await page.screenshot({path:output+'/wp0-services-refresh-error-sample.png',fullPage:true});await page.unroute('**/api/discoveries');
+  await service.getByRole('button',{name:'نمونه سرویس مدیریت‌پذیر',exact:true}).click();await page.getByRole('heading',{name:'نمونه ایران متصل',exact:true}).waitFor();const inventoryRow=page.getByRole('row').filter({has:page.getByRole('button',{name:'نمونه سرویس مدیریت‌پذیر',exact:true})});await inventoryRow.locator('.status.success').waitFor();
+  await page.route('**/api/nodes/live-fixture/inventory',route=>route.abort());await Promise.all([page.waitForEvent('requestfailed',{predicate:r=>r.url().endsWith('/api/nodes/live-fixture/inventory')}),page.clock.runFor(15000)]);await page.getByRole('alert').last().waitFor();
+  if(await inventoryRow.locator('.status.success').count())throw Error('Server toolbox kept green process after its API refresh failed');
+  await page.screenshot({path:output+'/wp0-toolbox-refresh-error-sample.png',fullPage:true});await page.unroute('**/api/nodes/live-fixture/inventory');
  }
  if(exceptions.length)throw exceptions[0];
  console.log(JSON.stringify({scope:'sample UI with real Chrome and isolated Go/PostgreSQL authentication',before,widths:[1448,1920,390],screenshots:output,assertions:before?'baseline captures only':'offline/missing/API-failure resources, messages, time isolation, desktop layout'}));

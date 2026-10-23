@@ -33,11 +33,26 @@ grep -F "expected='$sha'" .runtime/edge-node-install.sh >/dev/null
 echo 'Verified edge bootstrap program bytes and script checksum match.'
 # Bounded requests only on this disposable stack verify nginx's real 429 response.
 for n in $(seq 1 45); do
-  sudo curl --silent --cacert .runtime/config/tls/cert.pem -D ".runtime/rate-$n.headers" -o /dev/null -w '%{http_code}' https://127.0.0.1:9443/api/me > ".runtime/rate-$n.status" &
+  sudo curl --silent --cacert .runtime/config/tls/cert.pem -D ".runtime/rate-$n.headers" -o ".runtime/rate-$n.json" -w '%{http_code}' https://127.0.0.1:9443/api/me > ".runtime/rate-$n.status" &
 done
 wait
 grep -l '^429$' .runtime/rate-*.status >/dev/null
 grep -i 'Retry-After: 60' .runtime/rate-*.headers >/dev/null
+python3 - <<'PY'
+import glob, json, pathlib
+checked = 0
+for name in glob.glob('.runtime/rate-*.status'):
+    path = pathlib.Path(name)
+    if path.read_text().strip() != '429':
+        continue
+    headers = dict(line.split(':', 1) for line in path.with_suffix('.headers').read_text().splitlines() if ':' in line)
+    headers = {key.lower(): value.strip() for key, value in headers.items()}
+    body = json.loads(path.with_suffix('.json').read_text())
+    assert body.get('request_id') and body['request_id'] == headers.get('x-request-id'), 'Edge request ID contract failed'
+    checked += 1
+assert checked > 0, 'No actual edge throttling result checked'
+print('Actual nginx JSON throttling request IDs match response headers.')
+PY
 printf '{"profile":"strict"}' | sudo tee .runtime/config/policy/desired.json >/dev/null
 for n in $(seq 1 10); do
   if sudo grep -q '"profile":"strict"' .runtime/config/policy/observed.json; then break; fi
