@@ -381,7 +381,7 @@ func retirementPendingMutations(ctx context.Context, tx pgx.Tx, key []byte) erro
 		if armed {
 			return errors.New("finish_pending_operations_before_engine_retirement")
 		}
-		if kind == "tunnel-check" {
+		if kind == "tunnel-check" || kind == "adoption-preview" {
 			continue
 		}
 		if kind == "node" {

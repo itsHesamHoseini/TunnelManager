@@ -326,6 +326,7 @@ func (s *Server) tunnelImport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) tunnelAdopt(w http.ResponseWriter, r *http.Request) {
 	var q struct {
 		RequestKey       string
+		Preview          string
 		ExpectedRevision int64
 		Confirm          bool
 	}
@@ -337,7 +338,21 @@ func (s *Server) tunnelAdopt(w http.ResponseWriter, r *http.Request) {
 		badOperation(w, errors.New("review_import_and_explicitly_adopt"))
 		return
 	}
-	id, e := s.newJob(r.Context(), q.RequestKey, "adopt", r.PathValue("id"), "Adopt existing instances", JobPayload{Tunnel: r.PathValue("id"), Spec: record.Spec, Instances: record.Instances, Hashes: record.Hashes, ExpectedRevision: rev, Confirm: true})
+	evidence := map[string]string{}
+	if q.Preview != "" {
+		var raw []byte
+		if s.DB.QueryRow(r.Context(), "SELECT cipher FROM operations WHERE id=$1 AND kind='adoption-preview' AND phase='succeeded' AND target=$2 AND updated>now()-interval '5 minutes'", q.Preview, r.PathValue("id")).Scan(&raw) != nil {
+			badOperation(w, errors.New("repeat_adoption_preview"))
+			return
+		}
+		var preview JobPayload
+		if s.openValue("operation:"+q.Preview, raw, &preview) != nil || preview.ExpectedRevision != rev {
+			badOperation(w, errors.New("repeat_adoption_preview"))
+			return
+		}
+		evidence = preview.AdoptionEvidence
+	}
+	id, e := s.newJob(r.Context(), q.RequestKey, "adopt", r.PathValue("id"), "Adopt existing instances", JobPayload{AdoptionEvidence: evidence, Tunnel: r.PathValue("id"), Spec: record.Spec, Instances: record.Instances, Hashes: record.Hashes, ExpectedRevision: rev, Confirm: true})
 	if e != nil {
 		badOperation(w, e)
 		return

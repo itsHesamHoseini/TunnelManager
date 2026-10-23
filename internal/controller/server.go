@@ -266,6 +266,8 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("GET /api/nodes/{id}/history", s.nodeHistory)
 	private.HandleFunc("GET /api/engines", s.engineCatalog)
 	private.HandleFunc("GET /api/backhaul-options", s.backhaulOptions)
+	private.HandleFunc("GET /api/adoption-report", s.adoptionReport)
+	private.HandleFunc("POST /api/tunnels/{id}/adoption-preview", s.adoptionPreview)
 	private.HandleFunc("POST /api/tunnel-drafts/normalize", s.normalizeDraft)
 	private.HandleFunc("GET /api/operations", s.operationList)
 	private.HandleFunc("GET /api/operations/{id}", s.operationDetail)

@@ -94,6 +94,11 @@ func (s *Server) expand(ctx context.Context, q *JobPayload) error {
 			next.TransportRemote.Host = prior.TransportRemote.Host
 			next.PeerOptions = sharedPeerOptions(prior, q.Spec)
 			next.Routes = propagateSharedMappings(prior.Routes, old.Spec.Routes, q.Spec.Routes)
+			var err error
+			next.Application, err = carryMappingProbe(prior, next)
+			if err != nil {
+				return err
+			}
 
 			group[i].Record.Spec = next
 		}

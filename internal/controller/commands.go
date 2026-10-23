@@ -134,6 +134,7 @@ func (s *Server) command(ctx context.Context, op, node, stage, kind string, payl
 }
 
 type JobPayload struct {
+	AdoptionEvidence map[string]string `json:"adoption_evidence,omitempty"`
 	Changes          []SettingChange   `json:"changes,omitempty"`
 	PreserveCurrent  bool              `json:"preserve_current,omitempty"`
 	RecoveryAttempt  int               `json:"recovery_attempt,omitempty"`
@@ -298,6 +299,8 @@ func (s *Server) processJob(parent context.Context, id string) {
 		s.processPlan(ctx, id, phase, q)
 	case "adopt":
 		s.processAdoption(ctx, id, q)
+	case "adoption-preview":
+		s.processAdoptionPreview(ctx, id, q)
 	case "tunnel-action":
 		s.processTunnelAction(ctx, id, q)
 	case "tunnel-check":

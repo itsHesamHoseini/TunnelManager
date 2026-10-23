@@ -443,12 +443,32 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		}
 		id, _ := result["tunnel_id"].(string)
 		_, revision, _, _ := s.readTunnel(ctx, id)
-		status, result = request(t, client, srv.URL+"/api/tunnels/"+id+"/adopt", "POST", map[string]any{"RequestKey": "native_adopt_" + instance, "ExpectedRevision": revision, "Confirm": true})
+		// The read-only preview and metadata adoption must retain both actual
+		// configurations and process identities, including the shared listener.
+		protected := func() string {
+			return string(run("exec", nodes[0], "systemctl", "show", "synthetic-shared-server", "-p", "MainPID")) + string(run("exec", nodes[1], "systemctl", "show", entry.unit, "-p", "MainPID")) + string(run("exec", nodes[0], "sha256sum", "/etc/synthetic-shared-server.toml")) + string(run("exec", nodes[1], "sha256sum", "/etc/"+strings.TrimSuffix(entry.unit, ".service")+".toml"))
+		}
+		before := protected()
+		status, result = request(t, client, srv.URL+"/api/tunnels/"+id+"/adoption-preview", "POST", map[string]any{"RequestKey": "native_preview_" + instance, "ExpectedRevision": revision})
+		if status != 200 {
+			t.Fatal("shared adoption preview rejected")
+		}
+		preview, _ := result["operation_id"].(string)
+		wait(preview)
+		var previewMutations int
+		s.DB.QueryRow(ctx, "SELECT count(*) FROM commands WHERE operation_id=$1 AND kind<>'inventory'", preview).Scan(&previewMutations)
+		if previewMutations != 0 || protected() != before {
+			t.Fatal("adoption preview changed real infrastructure")
+		}
+		status, result = request(t, client, srv.URL+"/api/tunnels/"+id+"/adopt", "POST", map[string]any{"RequestKey": "native_adopt_" + instance, "ExpectedRevision": revision, "Confirm": true, "Preview": preview})
 		if status != 200 {
 			t.Fatal("shared adoption rejected")
 		}
 		op, _ := result["operation_id"].(string)
 		wait(op)
+		if protected() != before {
+			t.Fatal("adoption changed configuration or process identity")
+		}
 		sharedIDs = append(sharedIDs, id)
 	}
 	for index, id := range sharedIDs {
@@ -471,6 +491,15 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+port+"/probe',timeout=5).read()")
 	}
 	t.Log("Real shared listener and two independent clients on the same node imported/adopted; both route edits preserved the other route, scoped options and per-instance revision hashes")
+	first, revision, _, e := s.readTunnel(ctx, sharedIDs[0])
+	if e != nil {
+		t.Fatal(e)
+	}
+	applyPlan(map[string]any{"RequestKey": "native_restore_adopted_baseline", "Tunnel": sharedIDs[0], "Name": "Synthetic shared first", "Spec": first.Spec, "ExpectedRevision": revision, "RevertRevision": 2})
+	for _, port := range []string{"24843", "24844"} {
+		run("exec", nodes[1], "python3", "-c", "import urllib.request; assert b'synthetic-native-response' in urllib.request.urlopen('http://"+ips[0]+":"+port+"/probe',timeout=5).read()")
+	}
+	t.Log("Native discovery -> read-only preview -> explicit adoption -> shared edit -> adopted baseline restore: unchanged preview/adoption PIDs/configs and real HTTP on both restored entries")
 	status, _ = request(t, client, srv.URL+"/api/certificates/native_tls/policy", "PUT", map[string]any{"expected_policy_revision": 0, "auto_deploy": true, "confirm": true})
 	if status != 200 {
 		t.Fatal("explicit automatic deployment policy was not saved")

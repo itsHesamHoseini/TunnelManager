@@ -193,6 +193,14 @@ func (s *Server) tunnelPlan(w http.ResponseWriter, r *http.Request) {
 	if previous == nil && q.Spec.Token == engine.Mask {
 		q.Spec.Token = ""
 	}
+	if previous != nil {
+		probe, e := carryMappingProbe(*previous, q.Spec)
+		if e != nil {
+			badOperation(w, e)
+			return
+		}
+		q.Spec.Application = probe
+	}
 	if e := engine.GenerateSecrets(&q.Spec); e != nil {
 		badOperation(w, e)
 		return
@@ -719,37 +727,33 @@ func (s *Server) processTunnelAction(ctx context.Context, id string, q JobPayloa
 }
 func (s *Server) processAdoption(ctx context.Context, id string, q JobPayload) {
 	s.phase(ctx, id, "running", nil, nil)
+	_, revision, managed, readError := s.readTunnel(ctx, q.Tunnel)
+	if readError != nil || managed || revision != q.ExpectedRevision {
+		s.phase(ctx, id, "failed", nil, errors.New("adoption_revision_changed"))
+		return
+	}
+	selectedPeers, checkError := s.readAdoptionEvidence(ctx, id, q)
+	if checkError != nil {
+		s.phase(ctx, id, "failed", nil, checkError)
+		return
+	}
 	privateConfigs := map[string]string{}
+	adoptedPeers := []map[string]any{}
+	failAdoption := func(err error) {
+		s.phase(ctx, id, "failed", map[string]any{"adoption_results": adoptedPeers, "files_changed": false, "services_restarted": false}, err)
+	}
 	for _, p := range s.changeParts(q) {
-		var inventory []byte
-		if s.DB.QueryRow(ctx, "SELECT inventory FROM nodes WHERE id=$1", p.Node).Scan(&inventory) != nil {
-			s.phase(ctx, id, "failed", nil, errors.New("discover_node_first"))
-			return
-		}
-		var value struct {
-			Instances []nodeops.Discovered `json:"instances"`
-		}
-		json.Unmarshal(inventory, &value)
-		var selected *nodeops.Discovered
-		for i := range value.Instances {
-			if value.Instances[i].ID == q.Instances[p.Node] {
-				selected = &value.Instances[i]
-				break
-			}
-		}
-		if selected == nil {
-			s.phase(ctx, id, "failed", nil, errors.New("discovered_instance_missing"))
-			return
-		}
-		if q.Hashes[p.Node] != selected.Hash {
-			s.phase(ctx, id, "failed", nil, errors.New("rediscover_and_import_changed_configuration_before_adoption"))
-			return
-		}
+		selected := selectedPeers[p.Node]
+		s.step(ctx, id, "adopt", p.Node, "running", "")
 		v, e := s.command(ctx, id, p.Node, "adopt", "instance.adopt", map[string]any{"ID": selected.ID, "Hash": selected.Hash, "Fingerprint": selected.Fingerprint, "DefinitionHash": selected.DefinitionHash, "Confirm": true})
 		if e != nil {
-			s.phase(ctx, id, "failed", nil, e)
+			s.step(ctx, id, "adopt", p.Node, "failed", e.Error())
+			adoptedPeers = append(adoptedPeers, map[string]any{"node": p.Node, "adopted": false, "code": e.Error()})
+			s.phase(ctx, id, "failed", map[string]any{"adoption_results": adoptedPeers, "files_changed": false, "services_restarted": false}, e)
 			return
 		}
+		s.step(ctx, id, "adopt", p.Node, "succeeded", "")
+		adoptedPeers = append(adoptedPeers, map[string]any{"node": p.Node, "adopted": true})
 		var result struct {
 			Private string `json:"private_configuration"`
 		}
@@ -758,19 +762,33 @@ func (s *Server) processAdoption(ctx context.Context, id string, q JobPayload) {
 		q.Hashes[p.Node] = selected.Hash
 	}
 	if e := engine.ImportSecrets(&q.Spec, privateConfigs["server"], privateConfigs["client"]); e != nil {
-		s.phase(ctx, id, "failed", nil, e)
+		failAdoption(e)
 		return
 	}
 	record := TunnelRecord{Spec: q.Spec, Instances: q.Instances, Hashes: q.Hashes}
 	cipher, e := s.sealValue("tunnel:"+q.Tunnel, record)
 	if e != nil {
-		s.phase(ctx, id, "failed", nil, e)
+		failAdoption(e)
 		return
 	}
-	tag, e := s.DB.Exec(ctx, "UPDATE tunnels SET managed=true,cipher=$1,revision=revision+1,updated=now() WHERE id=$2 AND revision=$3", cipher, q.Tunnel, q.ExpectedRevision)
+	tx, e := s.DB.Begin(ctx)
+	if e != nil {
+		failAdoption(e)
+		return
+	}
+	defer tx.Rollback(ctx)
+	tag, e := tx.Exec(ctx, "UPDATE tunnels SET managed=true,cipher=$1,revision=revision+1,updated=now() WHERE id=$2 AND revision=$3", cipher, q.Tunnel, q.ExpectedRevision)
 	if e != nil || tag.RowsAffected() != 1 {
-		s.phase(ctx, id, "failed", nil, errors.New("adoption_revision_changed"))
+		failAdoption(errors.New("adoption_revision_changed"))
 		return
 	}
-	s.phase(ctx, id, "succeeded", map[string]any{"adopted": true, "files_changed": false}, nil)
+	if _, e = tx.Exec(ctx, "INSERT INTO tunnel_versions(tunnel_id,revision,cipher)VALUES($1,$2,$3)", q.Tunnel, q.ExpectedRevision+1, cipher); e != nil {
+		failAdoption(e)
+		return
+	}
+	if e = tx.Commit(ctx); e != nil {
+		failAdoption(e)
+		return
+	}
+	s.phase(ctx, id, "succeeded", map[string]any{"adopted": true, "adoption_results": adoptedPeers, "files_changed": false, "services_restarted": false}, nil)
 }
