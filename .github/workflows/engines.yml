@@ -27,6 +27,7 @@ jobs:
       - run: npx playwright install chrome --with-deps
         working-directory: web
       - run: docker build -t tunnelmanager-native-lab -f scripts/native-lab.Dockerfile .
+      - run: node scripts/prepare-native-evidence.mjs
       - run: go test -tags nativelab -timeout 25m -v ./internal/nodeops
         env:
           TUNNELMANAGER_NATIVE_LAB: '1'
@@ -38,5 +39,9 @@ jobs:
         with:
           name: native-browser-evidence
           path: |
-            docs/evidence/*native*.png
-            docs/evidence/revision2/*native*
+            docs/evidence/m4-native-backhaul-*.png
+            docs/evidence/m4-native-mobile.png
+            docs/evidence/console-native-discovery-en.png
+            docs/evidence/console-native-service-tools-en.png
+            docs/evidence/native-failure.png
+            docs/evidence/revision2/wp2-port-edit-native.webm
