@@ -59,15 +59,20 @@ type Settings struct {
 	TelegramOperations   bool     `json:"telegram_operations"`
 }
 type Server struct {
-	Config        Config
-	DB            *pgxpool.Pool
-	Limiter       *limit.Limiter
-	dummy         string
-	passwordSlots chan struct{}
-	agentSlots    chan struct{}
-	mu            sync.Mutex
-	connected     map[string]*websocket.Conn
-	settings      Settings
+	Config         Config
+	DB             *pgxpool.Pool
+	Limiter        *limit.Limiter
+	dummy          string
+	passwordSlots  chan struct{}
+	agentSlots     chan struct{}
+	mu             sync.Mutex
+	connected      map[string]*websocket.Conn
+	settings       Settings
+	bootstrapOnce  sync.Once
+	bootstrapPath  string
+	bootstrapMeta  *nodeArtifact
+	bootstrapError error
+	bootstrapSlots chan struct{}
 }
 
 func New(ctx context.Context, cfg Config) (*Server, error) {
@@ -97,6 +102,7 @@ func New(ctx context.Context, cfg Config) (*Server, error) {
 		defaults.Profile = "strict"
 	}
 	s := &Server{Config: cfg, DB: p, Limiter: limit.New(), dummy: secure.Password(secure.Token(32)), passwordSlots: make(chan struct{}, 2), agentSlots: make(chan struct{}, 8), connected: map[string]*websocket.Conn{}, settings: defaults}
+	s.bootstrapSlots = make(chan struct{}, 1)
 
 	var encrypted []byte
 	if e = p.QueryRow(ctx, "SELECT encrypted FROM settings WHERE id=1").Scan(&encrypted); e == nil {
@@ -248,6 +254,8 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/mfa/telegram", s.telegramRequest)
 	m.HandleFunc("POST /api/logout", s.logout)
 	m.HandleFunc("POST /api/enroll", s.enroll)
+	m.HandleFunc("GET /bootstrap/node-install.sh", s.bootstrapScript)
+	m.HandleFunc("GET /bootstrap/node/{arch}", s.bootstrapDownload)
 	m.HandleFunc("GET /api/agent", s.agentConnection)
 	private := http.NewServeMux()
 	private.HandleFunc("GET /api/me", s.me)

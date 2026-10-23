@@ -1,7 +1,7 @@
 import {ObservedHistoryChart} from './observed-history';
 import {ActionHome,attentionOrder,tunnelState} from './home';
 import React, {useEffect, useRef, useState} from 'react';
-import {IconActivity, IconArrowBackUp, IconArrowsExchange, IconBell, IconCertificate, IconCheck, IconChevronDown, IconDatabase, IconDots, IconDownload, IconHome, IconLink, IconLogout, IconMoon, IconPlayerPlay, IconPlus, IconRadar, IconRefresh, IconSearch, IconServer, IconSettings, IconShield, IconSun, IconUser, IconWorld, IconX} from '@tabler/icons-react';
+import {IconActivity, IconArrowBackUp, IconArrowsExchange, IconBell, IconCertificate, IconCheck, IconChevronDown, IconDatabase, IconDots, IconDownload, IconHome, IconLink, IconLogout, IconMoon, IconPlayerPlay, IconPlus, IconRadar, IconRefresh, IconSearch, IconServer, IconSettings, IconShield, IconSun, IconTags, IconPlugConnected, IconUser, IconWorld, IconX} from '@tabler/icons-react';
 import {Badge, ErrorMessage, Operation, address, key, request, stamp, tr, useResource, canDiscardDraft} from './operations';
 import {TunnelWorkspace} from './tunnels';
 import './console.css';
@@ -10,7 +10,7 @@ import {MessageCode} from './operations';
 
 function Flag({node}:any){const country=(node?.metadata?.country||(node?.role==='iran'?'IR':'')).toLowerCase();return ['ir','de','az','tr','ae','sg','us','nl','gb','fr'].includes(country)?<img className="country-flag" src={'/assets/flags/'+country+'.svg'} alt={country.toUpperCase()}/>:<IconWorld size={18} aria-label={tr('Country unspecified','کشور مشخص نشده')}/>;}
 const pages:any = {
- overview:['Overview','نمای کلی',IconHome], routes:['Routes','مسیرها',IconArrowsExchange], tunnels:['Tunnels','تونل‌ها',IconLink], servers:['Servers','سرورها',IconServer], services:['Services','سرویس‌ها',IconDatabase], tags:['Tags','برچسب‌ها',IconDatabase], ports:['Ports','پورت‌ها',IconDatabase], discovery:['Discovery','دیسکاوری',IconRadar], monitoring:['Monitoring','مانیتورینگ',IconActivity], operations:['Operations','عملیات',IconDownload], alerts:['Alerts','هشدارها',IconBell], certificates:['Certificates','گواهی‌ها',IconCertificate], security:['Security','امنیت',IconShield], settings:['Settings','تنظیمات',IconSettings]
+ overview:['Overview','نمای کلی',IconHome], routes:['Routes','مسیرها',IconArrowsExchange], tunnels:['Tunnels','تونل‌ها',IconLink], servers:['Servers','سرورها',IconServer], services:['Services','سرویس‌ها',IconDatabase], tags:['Tags','برچسب‌ها',IconTags], ports:['Ports','پورت‌ها',IconPlugConnected], discovery:['Discovery','دیسکاوری',IconRadar], monitoring:['Monitoring','مانیتورینگ',IconActivity], operations:['Operations','عملیات',IconDownload], alerts:['Alerts','هشدارها',IconBell], certificates:['Certificates','گواهی‌ها',IconCertificate], security:['Security','امنیت',IconShield], settings:['Settings','تنظیمات',IconSettings]
 };
 const title=(p:string)=>tr(pages[p][0],pages[p][1]);
 const online=(node:any)=>isNodeOnline(node);

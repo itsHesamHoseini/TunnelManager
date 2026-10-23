@@ -8,7 +8,7 @@ const output=before?'.runtime/revision2-before':'docs/evidence/revision2';fs.mkd
 function totp(s){const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';const bits=[...s].map(x=>alphabet.indexOf(x).toString(2).padStart(5,'0')).join('');const k=Buffer.from(bits.match(/.{8}/g).map(x=>parseInt(x,2)));const b=Buffer.alloc(8);b.writeBigUInt64BE(BigInt(Math.floor(Date.now()/30000)));const h=createHmac('sha1',k).update(b).digest();return ((h.readUInt32BE(h[19]&15)&0x7fffffff)%1000000).toString().padStart(6,'0')}
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
- const ctx=await browser.newContext({ignoreHTTPSErrors:true});const page=await ctx.newPage();const exceptions=[];page.on('pageerror',e=>exceptions.push(e.message));
+ const ctx=await browser.newContext({ignoreHTTPSErrors:true});const page=await ctx.newPage();await page.clock.install();const exceptions=[];page.on('pageerror',e=>exceptions.push(e.message));
  await page.goto(url);await page.getByLabel('Username').fill('testadmin');await page.getByLabel('Password',{exact:true}).fill('Synthetic-Password-2026!');await page.getByRole('button',{name:'Continue',exact:true}).click();await page.locator('.private').waitFor();await page.getByLabel('Code',{exact:true}).fill(totp(await page.locator('.private').innerText()));await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'I saved them'}).click();await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'فارسی',exact:true}).click();
  const nav=name=>page.locator('nav').getByRole('button',{name,exact:true});
  for(const [width,height] of [[1280,1086],[1448,1086],[1920,1086],[390,844]]){
@@ -59,6 +59,11 @@ try{
   await page.getByText('شمارندهٔ رابط سرور؛ مصرف اختصاصی تونل یا صورتحساب نیست.',{exact:true}).waitFor();
   if(await page.locator('.summary .resource-current').count())throw Error('Node details reused stale values');
   await page.screenshot({path:`${output}/wp0-disconnected-detail-sample.png`,fullPage:true});
+  // Delay a real node-list response across two real application poll ticks.
+  // Only browser time is accelerated; the API/auth/database are unchanged.
+  let pendingReads=0,releaseRead,firstRead,fulfilled;const held=new Promise(resolve=>releaseRead=resolve),observed=new Promise(resolve=>firstRead=resolve),completed=new Promise(resolve=>fulfilled=resolve);
+  await page.route('**/api/nodes',async route=>{pendingReads++;if(pendingReads===1){const response=await route.fetch();firstRead();await held;await route.fulfill({response});fulfilled()}else await route.abort()});
+  await page.clock.runFor(15000);await observed;await page.clock.runFor(15000);await new Promise(resolve=>setTimeout(resolve,300));releaseRead();await completed;await page.unroute('**/api/nodes');if(pendingReads!==1)throw Error('Overlapping node polls while first response is pending: '+pendingReads);
   await nav('نمای کلی').click();await page.route('**/api/nodes',route=>route.abort());
   // Let the real polling path fail; no synthetic state setter bypasses the application.
   await page.getByRole('alert').filter({hasText:/ارتباط|درخواست|دریافت/}).first().waitFor({timeout:20000});

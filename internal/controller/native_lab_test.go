@@ -77,6 +77,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	if b, e := build.CombinedOutput(); e != nil {
 		t.Fatalf("CLI build failed: %v %s", e, b)
 	}
+	s.bootstrapPath = binary // Serve the actual built CLI, never the Go test executable.
 	run := func(args ...string) []byte {
 		t.Helper()
 		cmd := exec.CommandContext(ctx, "docker", args...)
@@ -93,6 +94,7 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 	nodes := []string{"tm-listener-" + suffix, "tm-dialer-" + suffix}
 	ips := []string{}
 	ids := []string{}
+	s.Config.Origin = fmt.Sprintf("https://controller.example.com:%d", port)
 	for i, node := range nodes {
 		run("run", "-d", "--name", node, "--network", network, "--add-host", "controller.example.com:host-gateway", "--privileged", "--cgroupns=host", "--tmpfs", "/run", "--tmpfs", "/run/lock", "--tmpfs", "/tmp", "-v", "/sys/fs/cgroup:/sys/fs/cgroup:rw", "tunnelmanager-native-lab")
 		n := node
@@ -100,6 +102,8 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		run("exec", node, "mkdir", "-p", "/lab/public")
 		run("cp", binary, node+":/lab/tunnelmanager")
 		run("cp", ca, node+":/lab/controller.crt")
+		run("cp", ca, node+":/usr/local/share/ca-certificates/tm-lab-controller.crt")
+		run("exec", node, "update-ca-certificates")
 		run("exec", node, "chmod", "700", "/lab/tunnelmanager")
 		for attempt := 0; attempt < 30; attempt++ {
 			b, _ := exec.CommandContext(ctx, "docker", "exec", node, "systemctl", "is-system-running").Output()
@@ -112,7 +116,31 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		cmd := exec.CommandContext(ctx, "docker", "exec", "-i", node, "/lab/tunnelmanager", "setup", "--mode", "node", "--yes", "--controller", fmt.Sprintf("https://controller.example.com:%d", port), "--ca", "/lab/controller.crt", "--token-stdin")
+		// Download through real trusted TLS, with no installed CLI prerequisite.
+		run("exec", node, "curl", "--proto", "=https", "--tlsv1.2", "-fsSL", s.Config.Origin+"/bootstrap/node-install.sh", "-o", "/lab/node-install.sh")
+		if i == 0 {
+			meta, err := s.bootstrapArtifact()
+			if err != nil {
+				t.Fatal(err)
+			}
+			badScript := filepath.Join(work, "bad-node-install.sh")
+			b, err := os.ReadFile(filepath.Join("node_bootstrap.sh"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			b = []byte(strings.NewReplacer("@ARCH@", meta.Arch, "@HASH@", strings.Repeat("0", 64), "@ORIGIN@", shellLiteral(s.Config.Origin)).Replace(string(b)))
+			if err = os.WriteFile(badScript, b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			run("cp", badScript, node+":/lab/bad-node-install.sh")
+			bad := exec.CommandContext(ctx, "docker", "exec", node, "sh", "/lab/bad-node-install.sh", "--yes")
+			if out, err := bad.CombinedOutput(); err == nil || !strings.Contains(string(out), "Checksum mismatch") {
+				t.Fatal("native bootstrap failed to reject wrong checksum before setup")
+			}
+			run("exec", node, "test", "!", "-e", "/etc/systemd/system/tunnelmanager-agent.service")
+			t.Log("fresh-node bootstrap rejected incorrect checksum before installation")
+		}
+		cmd := exec.CommandContext(ctx, "docker", "exec", "-i", node, "sh", "/lab/node-install.sh", "--yes", "--ca", "/lab/controller.crt")
 		cmd.Stdin = strings.NewReader(token + "\n")
 		if out, e := cmd.CombinedOutput(); e != nil {
 			t.Fatalf("native enrollment failed (token suppressed): %v\n%s", e, out)
@@ -137,6 +165,8 @@ func TestNativeControllerBrowserWorkflow(t *testing.T) {
 		run("exec", node, "systemd-run", "--unit=lab-backend", "python3", "-m", "http.server", "29096", "--bind", "127.0.0.1", "--directory", "/lab/public")
 		run("exec", node, "systemd-run", "--unit=lab-backend-alt", "python3", "-m", "http.server", "29097", "--bind", "127.0.0.1", "--directory", "/lab/public")
 	}
+	s.Config.Origin = srv.URL // Browser uses the separate loopback test address.
+	t.Log("Fresh Linux agent bootstrap downloaded the pinned actual CLI over trusted TLS, installed through the existing previewed setup, consumed hidden tokens and retained explicit full-fingerprint approval on both peers.")
 	for _, id := range ids {
 		ready := false
 		for attempt := 0; attempt < 45; attempt++ {

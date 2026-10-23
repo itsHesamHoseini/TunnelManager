@@ -203,6 +203,10 @@ func runNativeBackhaul(t *testing.T, matrix bool) {
 				run("exec", a, "mkdir", "-p", "/etc/tunnelmanager-agent/certificates/matrix")
 				run("exec", a, "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=matrix.example.com", "-keyout", "/etc/tunnelmanager-agent/certificates/matrix/key.pem", "-out", "/etc/tunnelmanager-agent/certificates/matrix/cert.pem")
 				run("exec", a, "chmod", "600", "/etc/tunnelmanager-agent/certificates/matrix/key.pem")
+				publicCertificate := filepath.Join(t.TempDir(), "matrix-cert.pem")
+				run("cp", a+":/etc/tunnelmanager-agent/certificates/matrix/cert.pem", publicCertificate)
+				run("exec", b, "mkdir", "-p", "/etc/tunnelmanager-agent/certificates/matrix")
+				run("cp", publicCertificate, b+":/etc/tunnelmanager-agent/certificates/matrix/cert.pem")
 				for _, edit := range []string{"user_port", "destination", "token", "transport"} {
 					proposed := spec
 					proposed.Routes = append([]engine.Route{}, spec.Routes...)

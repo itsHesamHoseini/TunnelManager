@@ -36,7 +36,8 @@ func (s *Server) nodeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Audit(r.Context(), "enrollment-token", q.Name, "created")
-	write(w, map[string]any{"token": token, "controller": s.Config.Origin, "expires_seconds": 600, "command": "tunnelmanager setup --mode node --controller " + s.Config.Origin + " --token-stdin", "note": "The one-time token is read from a hidden prompt, never a shell argument."})
+	bootstrap, bootstrapError := s.bootstrapCommand()
+	write(w, map[string]any{"token": token, "controller": s.Config.Origin, "expires_seconds": 600, "command": "tunnelmanager setup --mode node --controller " + shellLiteral(s.Config.Origin) + " --token-stdin", "bootstrap_command": bootstrap, "bootstrap_available": bootstrapError == nil, "note": "The one-time token is read from a hidden prompt, never a shell argument."})
 }
 func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	if s.limited(w, r, "enroll:"+s.ip(r), .05, 5) {

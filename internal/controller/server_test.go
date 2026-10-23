@@ -52,6 +52,7 @@ func testServer(t *testing.T) (*Server, *httptest.Server, *http.Client) {
 		t.Fatal(e)
 	}
 	s := &Server{Config: Config{Key: make([]byte, 32), Static: testUI()}, DB: p, Limiter: newLimiter(), dummy: secure.Password("synthetic-dummy-password"), passwordSlots: make(chan struct{}, 2), agentSlots: make(chan struct{}, 8), connected: emptyConnections(), settings: Settings{Language: "en", Profile: "standard"}}
+	s.bootstrapSlots = make(chan struct{}, 1)
 	if e = s.InitAdmin(ctx, "testadmin", "Synthetic-Password-2026!"); e != nil {
 		t.Fatal(e)
 	}
