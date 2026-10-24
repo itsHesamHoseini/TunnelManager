@@ -3,20 +3,20 @@
 # Acceptance register
 ## Current correction acceptance (owner v2, 2026-10-23)
 
-Previous PASS entries below are historical release-scoped evidence and do not qualify the requested correction. [Revision register](REVISION-2.md) is the current WP0-WP9 status.
+Previous PASS entries below are historical release-scoped evidence and do not qualify the requested correction. Dated investigation checkpoints, including older PENDING/failed entries, are source-scoped history; the current table and final revision report are authoritative. [Revision register](REVISION-2.md) is the current WP0-WP9 status.
 
 | ID | Required repeatable acceptance | State |
 |---|---|---|
-| V2-00 | Chrome before/after at 1448x1086, 1920 and mobile: stale/disconnected/missing/API failure neutral resources, shared counts, threshold boundaries, Persian time/message/next action; Go request-id equality | PENDING |
-| V2-01 | Backhaul-only source scan/allowlist, backed-up mixed DB migration, no host writes, unknown listener port rejection, TCP/WSS native and Chrome | PENDING |
-| V2-02 | Simple two-peer port/backend/token/transport edit with honest click counts, advanced/raw preserved, native traffic/preflight/partial failure/manual+timer rollback, Chrome captures and recording | PARTIAL: approved six-field/mapping editor, readonly draft API, secret/identity/Chrome regressions; native new edit/fault matrix pending |
-| V2-03 | Classified adoption ratios and native discover/adopt/edit/revert without rewrite on adoption; owner corpus coverage | PENDING real redacted corpus |
+| V2-00 | Chrome before/after at 1448x1086, 1920 and mobile: stale/disconnected/missing/API failure neutral resources, shared counts, threshold boundaries, Persian time/message/next action; Go request-id equality | QUALIFIED LOCAL/C618 NATIVE EDGE: TestRevisionHonestyBrowser, TestObservationTruth, TestTunnelHealthUsesAuthoritativeNodeAvailability, TestRequestIDErrorContract; actual Compose429 ID equality. Live owner causes/counts untested under the explicit connection ban |
+| V2-01 | Backhaul-only source scan/allowlist, backed-up mixed DB migration, no host writes, unknown listener port rejection, TCP/WSS native and Chrome | QUALIFIEDC618: source allowlist3/0unexpected, actual mixed PostgreSQL restoration, TestUnknownActualListenerStillBlocksPort, full native40031275399 |
+| V2-02 | Simple two-peer port/backend/token/transport edit with honest click counts, advanced/raw preserved, native traffic/preflight/partial failure/manual+timer rollback, Chrome captures and recording | QUALIFIEDC618 ordinary/clone: all four actual Chrome edits/HTTP and all four native preflight/manual/partial90-second timer cases; artifact12537090152. Separate batch config/token rotation NOT IMPLEMENTED, as allowed when group rollback is unqualified |
+| V2-03 | Classified adoption ratios and native discover/adopt/edit/revert without rewrite on adoption; owner corpus coverage | QUALIFIEDC618 native preview/adopt/shared edit/baseline restore and local Chrome classification/replacement export; real redacted owner corpus NOT RECEIVED, coverage UNMEASURED |
 | V2-04 | Six main destinations, complete old-to-new functionality map and legacy routing browser checks | PENDING owner merge confirmation |
-| V2-05 | Action-first overview and server table without desktop overflow/truncated headers at >=1280 | PENDING |
-| V2-06 | Attention ordering, honest interface scope, layered timestamps and gapped 24h/7d history | PENDING |
-| V2-07 | Limited through-tunnel TCP/TLS check with explicit non-VLESS scope; VLESS proposal only | PENDING |
-| V2-08 | Copyable bootstrap, waiting/reconnect progress, full fingerprint plus comparison aid; optional SSH proposal only | PENDING |
-| V2-09 | Only reproduced maintenance bugs fixed with regression evidence; Persian form copy inventory | PARTIAL: model/browser regressions and FORM-COPY.fa.md; remaining evidence in REVISION-2.md |
+| V2-05 | Action-first overview and server table without desktop overflow/truncated headers at >=1280 | QUALIFIED LOCAL: actual Chrome1280/1448/1920/390, fixed-viewport/full-page captures, one-click synthetic failed-layer inspection |
+| V2-06 | Attention ordering, honest interface scope, layered timestamps and gapped 24h/7d history | QUALIFIED LOCAL/NATIVEC618: real PostgreSQL measured/null/gap aggregation and Chrome; actual Linux samples and layered HTTP path. No physical7-day soak claimed |
+| V2-07 | Limited through-tunnel TCP/TLS check with explicit non-VLESS scope; VLESS proposal only | QUALIFIEDC618 native actual user-entry TCP success/strict TLS negative and Chrome scope text; VLESS design only D21 |
+| V2-08 | Copyable bootstrap, waiting/reconnect progress, full fingerprint plus comparison aid; optional SSH proposal only | QUALIFIEDC618 native Ubuntu24 amd64 fresh noexec-/tmp setup/checksum rejection/identity, actual nginx byte comparison. Local Chrome receipt/error/focus/approval tested; optional SSH remains proposal D22 |
+| V2-09 | Only reproduced maintenance bugs fixed with regression evidence; Persian form copy inventory | QUALIFIED LOCAL: reproduced polling2->1/freshness/audit/focus/raw/FK/preview regressions and FORM-COPY.fa.md; no broad rewrite |
 
 Retired-engine portions of M4-01, M4-04, M5-01, M5-03 and C12/C17/C20 are **REMOVED BY OWNER (2026-10-23)**; Backhaul portions and safety guarantees remain required. Their old IDs/results are retained below as historical evidence, not silently deleted.
 

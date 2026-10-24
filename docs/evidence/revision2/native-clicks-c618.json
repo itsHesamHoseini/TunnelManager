@@ -1,0 +1,64 @@
+{
+  "source": "c6184219578c1e9828c05bf439db885ce92ef4b7",
+  "run": "https://github.com/itsHesamHoseini/TunnelManager/actions/runs/40031275399",
+  "scope": "actual captured native Chrome button events; fills/selects are separate interactions; post-apply safety confirmation is preserved",
+  "edits": [
+    {
+      "edit": "user_port",
+      "buttonsThroughImpactConfirmation": 3,
+      "allRecordedButtons": 7,
+      "buttons": [
+        "Edit settings",
+        "Check and preview",
+        "Confirm impact and apply",
+        "The path works; keep changes",
+        "Return to tunnels",
+        "Synthetic native backhaul tcp",
+        "Check connection"
+      ]
+    },
+    {
+      "edit": "destination",
+      "buttonsThroughImpactConfirmation": 3,
+      "allRecordedButtons": 7,
+      "buttons": [
+        "Edit settings",
+        "Check and preview",
+        "Confirm impact and apply",
+        "The path works; keep changes",
+        "Return to tunnels",
+        "Synthetic native backhaul tcp",
+        "Check connection"
+      ]
+    },
+    {
+      "edit": "token",
+      "buttonsThroughImpactConfirmation": 4,
+      "allRecordedButtons": 8,
+      "buttons": [
+        "Edit settings",
+        "Generate a new secure secret",
+        "Check and preview",
+        "Confirm impact and apply",
+        "The path works; keep changes",
+        "Return to tunnels",
+        "Synthetic native backhaul tcp",
+        "Check connection"
+      ]
+    },
+    {
+      "edit": "transport",
+      "buttonsThroughImpactConfirmation": 3,
+      "allRecordedButtons": 7,
+      "buttons": [
+        "Edit settings",
+        "Check and preview",
+        "Confirm impact and apply",
+        "The path works; keep changes",
+        "Return to tunnels",
+        "Synthetic native backhaul tcp",
+        "Check connection"
+      ]
+    }
+  ]
+}

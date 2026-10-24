@@ -1,0 +1,34 @@
+Native Linux qualification: source 5480dabd541d3994ce360bad0c761371e7cdc933
+Run: https://github.com/itsHesamHoseini/TunnelManager/actions/runs/40027781275
+Scope: disposable Linux/systemd/actual Backhaul 0.7.2 + actual Chrome. No production hosts.
+Artifact:12534708290 SHA256:8e9e7d573fbeb3c9b0b38ba240ab4649f6f0c951f32a87a74ed2e2eaf14e2d8b
+Selected verbatim test result lines; authentication and environment output intentionally excluded.
+
+2026-10-23T21:36:13.9303157Z     native_lab_test.go:148: fresh-node bootstrap rejected incorrect checksum before installation
+2026-10-23T21:36:17.2419120Z     native_lab_test.go:176: Fresh Linux agent bootstrap downloaded the pinned actual CLI over trusted TLS, installed through the existing previewed setup, consumed hidden tokens and retained explicit full-fingerprint approval on both peers.
+2026-10-23T21:44:02.1726150Z     native_lab_test.go:243: {"native_edit":"user_port","reviewStages":3,"recordedButtonClicks":["Edit settings","Check and preview","Confirm impact and apply","The path works; keep changes","Return to tunnels","Synthetic native backhaul tcp","Check connection"],"measurement":"button clicks only; fill/select operations are separate field interactions","scope":"real signed agents/systemd/Backhaul and HTTP through user entry"}
+2026-10-23T21:44:02.1732495Z         {"native_edit":"destination","reviewStages":3,"recordedButtonClicks":["Edit settings","Check and preview","Confirm impact and apply","The path works; keep changes","Return to tunnels","Synthetic native backhaul tcp","Check connection"],"measurement":"button clicks only; fill/select operations are separate field interactions","scope":"real signed agents/systemd/Backhaul and HTTP through user entry"}
+2026-10-23T21:44:02.1738434Z         {"native_edit":"token","reviewStages":3,"recordedButtonClicks":["Edit settings","Generate a new secure secret","Check and preview","Confirm impact and apply","The path works; keep changes","Return to tunnels","Synthetic native backhaul tcp","Check connection"],"measurement":"button clicks only; fill/select operations are separate field interactions","scope":"real signed agents/systemd/Backhaul and HTTP through user entry"}
+2026-10-23T21:44:02.1744888Z         {"native_edit":"transport","reviewStages":3,"recordedButtonClicks":["Edit settings","Check and preview","Confirm impact and apply","The path works; keep changes","Return to tunnels","Synthetic native backhaul tcp","Check connection"],"measurement":"button clicks only; fill/select operations are separate field interactions","scope":"real signed agents/systemd/Backhaul and HTTP through user entry"}
+2026-10-23T21:44:26.2043015Z     native_lab_test.go:322: Actual user entry TCP passed from destination peer; strict TLS to the HTTP backend failed as expected. Neither result asserts VLESS health.
+2026-10-23T21:46:42.3631815Z     native_lab_test.go:354: Real API clone generated independent identities; native version restoration, batch exactly-once actions, disable/start and owned removal passed
+2026-10-23T21:47:05.7589819Z     native_lab_test.go:427: Real unpaired foreign service: signed discovery, explicit named adoption without PID changes, actual stop/start and original-unit removal protection passed
+2026-10-23T21:49:56.3494641Z     native_lab_test.go:560: Real shared listener and two independent clients on the same node imported/adopted; both route edits preserved the other route, scoped options and per-instance revision hashes
+2026-10-23T21:50:54.6352188Z     native_lab_test.go:569: Native discovery -> read-only preview -> explicit adoption -> shared edit -> adopted baseline restore: unchanged preview/adoption PIDs/configs and real HTTP on both restored entries
+2026-10-23T21:51:23.8720619Z     native_lab_test.go:623: Real self-signed TLS/WSS issuance, deployment, linked renewal and automatic coordinated rotation passed; stopped consumer and client private-key isolation preserved
+2026-10-23T21:52:08.0927602Z     native_lab_test.go:673: Actual listener certificate mutation reverted through an independent systemd timer with its agent stopped; real TLS/WSS HTTP paths recovered
+2026-10-23T21:55:40.6054338Z     native_lab_test.go:742: Actual native RAM samples triggered only the selected unit after sustained duration during a controller-route outage; another service PID and an intentional stop were preserved
+2026-10-23T21:55:40.8191498Z     native_lab_test.go:748: Real controller/PostgreSQL/browser -> signed outbound TLS agents -> two Linux systemd peers and Backhaul TCP/WSS passed; data plane works with both agents stopped
+2026-10-23T21:55:41.2316091Z --- PASS: TestNativeControllerBrowserWorkflow (1177.99s)
+2026-10-23T21:55:41.2316885Z PASS
+2026-10-23T21:55:44.2629319Z --- PASS: TestNativeBoundedDiagnostics (2.10s)
+2026-10-23T21:58:51.4450266Z     native_lab_test.go:360: Actual engine download/checksum, two Linux systemd peers, two shared routes, HTTP data plane, unrelated port conflict, local timeout rollback, intentional stop/start and manual drift passed
+2026-10-23T21:58:51.7687108Z --- PASS: TestNativeBackhaul (187.51s)
+2026-10-23T21:58:51.7688151Z     --- PASS: TestNativeBackhaul/backhaul (184.06s)
+2026-10-23T22:00:45.6952343Z     native_lab_test.go:270: Native ordinary user_port: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-23T22:02:33.1307618Z     native_lab_test.go:270: Native ordinary destination: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-23T22:04:20.4105317Z     native_lab_test.go:270: Native ordinary token: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-23T22:06:07.8154923Z     native_lab_test.go:270: Native ordinary transport: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-23T22:06:08.1446127Z --- PASS: TestNativeOrdinaryEditFailureMatrix (436.38s)
+2026-10-23T22:06:08.1447282Z     --- PASS: TestNativeOrdinaryEditFailureMatrix/backhaul (432.83s)
+2026-10-23T22:06:08.1661262Z PASS

@@ -1,43 +1,56 @@
-Local Windows / isolated PostgreSQL / actual Chrome, sample UI only.
-Reproduce: TEST_DATABASE_URL points to an isolated database; TUNNELMANAGER_BROWSER_TESTS=1; npm run build --prefix web; go test -p 1 ./... -count=1 -v.
-Linux native build-tagged engine execution is NOT part of this local output.
---- PASS: TestRealBrowser (2.59s)
---- PASS: TestCertificateIssueAndEncryptedPersistence (0.26s)
---- PASS: TestCertificatePolicyIsIndependentCASAndRenewalPreservesPolicy (0.35s)
---- PASS: TestSignedChannelRejectsPendingAndAcceptsApproved (0.23s)
---- PASS: TestApprovalRequiresMatchingFingerprint (0.24s)
+Local Windows / isolated PostgreSQL / actual Chrome. Sample UI and real API/DB; no Linux execution in this local log.
+Full suite command: npm run build --prefix web; TEST_DATABASE_URL=isolated; TUNNELMANAGER_BROWSER_TESTS=1; go test -p 1 ./... -count=1 -v.
+Full suite runtime source aa1dee7: .runtime/revision-code-freeze-local.log. Later235308e changes only the replacement-note UI guard; its actual Chrome export/dismiss/preserve check passes in .runtime/replacement-note-guard.log.
+Local functional base:235308ed81587eb47bd58faa225ad15c46d11592
+
+--- PASS: TestAdoptionDryRunAndReportPreserveInfrastructureBoundary (2.93s)
+--- PASS: TestUnsupportedAdoptionEvidenceIsNotReady (0.00s)
+--- PASS: TestBootstrapPinnedBytesAndGuards (0.43s)
+--- PASS: TestBootstrapRejectsInvalidFilesAndOrigins (0.87s)
+--- PASS: TestRealBrowser (2.31s)
+--- PASS: TestCertificateIssueAndEncryptedPersistence (0.37s)
+--- PASS: TestCertificatePolicyIsIndependentCASAndRenewalPreservesPolicy (0.38s)
+--- PASS: TestSignedChannelRejectsPendingAndAcceptsApproved (0.27s)
+--- PASS: TestApprovalRequiresMatchingFingerprint (0.29s)
 --- PASS: TestDiscoveryResolverBounds (0.35s)
---- PASS: TestDNSDiscoveryOnlyCreatesUniqueObservation (1.04s)
---- PASS: TestSimpleEditorChrome (5.88s)
+--- PASS: TestDNSDiscoveryOnlyCreatesUniqueObservation (1.27s)
+--- PASS: TestSimpleEditorChrome (19.97s)
 --- PASS: TestHumanChangesDescribeMappingsWithoutSecretValues (0.00s)
---- PASS: TestDraftNormalizationIsReadOnlyRevisionCheckedAndRedacted (0.35s)
+--- PASS: TestDraftNormalizationIsReadOnlyRevisionCheckedAndRedacted (0.41s)
+--- PASS: TestLiveEnrollmentChrome (6.54s)
+--- PASS: TestEnrollmentStatusBindsOnlyConsumedIdentity (0.33s)
+--- PASS: TestEntryCheckTargetsActualMappingNotTransportOrBackend (0.30s)
+--- PASS: TestTunnelHealthUsesAuthoritativeNodeAvailability (0.26s)
 --- PASS: TestObservationTruth (0.00s)
 --- PASS: TestRequestIDErrorContract (0.00s)
---- PASS: TestOperationalPagesInBrowser (4.90s)
---- PASS: TestDurableJobIdempotencyAndEncryption (0.21s)
---- PASS: TestPortReservationsSerializeConflictingPlans (0.22s)
+--- PASS: TestOperationalPagesInBrowser (5.31s)
+--- PASS: TestDurableJobIdempotencyAndEncryption (0.23s)
+--- PASS: TestPortReservationsSerializeConflictingPlans (0.26s)
 --- PASS: TestPairingPreservesDirectionAndSharedRoutes (0.00s)
 --- PASS: TestPublicResultDoesNotExposeNestedSecrets (0.00s)
---- PASS: TestManualReimportRefreshesOnlyObservationMetadata (0.20s)
---- PASS: TestRetentionKeepsObservedAveragesAndGaps (0.21s)
---- PASS: TestRetirementMixedDatabaseBackupAndDependencies (0.53s)
---- PASS: TestRetirementControllerRejectsUnsupportedActionsBeforeOlderAgent (0.21s)
---- PASS: TestRetirementBackupFailureAndPendingBlockNoChanges (0.34s)
---- PASS: TestRetirementSameLocalIDOnDifferentNodesAndExactNumbers (0.23s)
---- PASS: TestRevisionHonestyBrowser (18.91s)
---- PASS: TestServerPagesInBrowser (2.90s)
---- PASS: TestAuthMFARecoveryAndRevocation (0.35s)
---- PASS: TestUnknownUserAndLockout (0.41s)
---- PASS: TestEnrollmentConsumedOnce (0.25s)
---- PASS: TestOriginAndOversize (0.70s)
---- PASS: TestSharedExpansionPreservesOtherClientRoutes (0.22s)
+--- PASS: TestManualReimportRefreshesOnlyObservationMetadata (0.25s)
+--- PASS: TestMappingProbeFollowsSharedRestoreWithoutChangingCustomTarget (0.00s)
+--- PASS: TestRetentionKeepsObservedAveragesAndGaps (0.25s)
+--- PASS: TestDayHistoryIsBoundedMeasuredBucketsWithMissingValues (0.24s)
+--- PASS: TestRetirementMixedDatabaseBackupAndDependencies (0.57s)
+--- PASS: TestRetirementControllerRejectsUnsupportedActionsBeforeOlderAgent (0.23s)
+--- PASS: TestRetirementBackupFailureAndPendingBlockNoChanges (0.37s)
+--- PASS: TestRetirementSameLocalIDOnDifferentNodesAndExactNumbers (0.38s)
+--- PASS: TestRevisionHonestyBrowser (30.16s)
+--- PASS: TestServerPagesInBrowser (2.88s)
+--- PASS: TestAuthMFARecoveryAndRevocation (0.41s)
+--- PASS: TestUnknownUserAndLockout (0.53s)
+--- PASS: TestEnrollmentConsumedOnce (0.28s)
+--- PASS: TestOriginAndOversize (0.74s)
+--- PASS: TestSharedExpansionPreservesOtherClientRoutes (0.26s)
 --- PASS: TestClientCommandsNeverReceiveListenerPrivateIdentity (0.00s)
---- PASS: TestTelegramMutationsStayGatedUntilSingleUseConfirmation (0.21s)
---- PASS: TestAlertNotificationsRespectSuppressionAndPersistCooldown (0.22s)
---- PASS: TestTelegramFixedEndpointAndExpiredChallenge (0.22s)
---- PASS: TestSecurityNotificationCooldownAndRestart (0.30s)
---- PASS: TestUsageScopeResetAndCAS (0.24s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	43.274s
+--- PASS: TestTelegramMutationsStayGatedUntilSingleUseConfirmation (0.23s)
+--- PASS: TestAlertNotificationsRespectSuppressionAndPersistCooldown (0.23s)
+--- PASS: TestTelegramFixedEndpointAndExpiredChallenge (0.23s)
+--- PASS: TestSecurityNotificationCooldownAndRestart (0.39s)
+--- PASS: TestUsageScopeResetAndCAS (0.34s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	82.079s
 --- PASS: TestRedactUnsupportedNestedArrayTables (0.00s)
 --- PASS: TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade (0.00s)
 --- PASS: TestRoundTripAndThreeIndependentEndpoints (0.00s)
@@ -45,15 +58,123 @@ ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	43.274s
 --- PASS: TestConflictAndResourceBounds (0.00s)
 --- PASS: TestSharedTokenMaskAndUnsupportedEngine (0.00s)
 --- PASS: TestRawRoundTripKeepsMappingIdentityAndNames (0.00s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/engine	0.024s
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/engine	0.026s
 --- PASS: TestEncryptedBackupAndTamper (0.22s)
---- PASS: TestSnapshotAndBoundaries (0.04s)
---- PASS: TestTLSNameAndKeys (0.11s)
+--- PASS: TestSnapshotAndBoundaries (0.02s)
+--- PASS: TestTLSNameAndKeys (0.03s)
 --- PASS: TestOwnedDatabasePurge (0.01s)
 --- PASS: TestDataSymlinkRefused (0.00s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/install	0.407s
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/install	0.308s
 --- PASS: TestBurstBackoffAndRecovery (0.00s)
 --- PASS: TestConcurrentBudget (0.00s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/limit	0.020s
+--- PASS: TestUnknownActualListenerStillBlocksPort (0.00s)
+--- PASS: TestDockerNATReservationParsing (0.00s)
+--- PASS: TestRecoveryRequiresSustainedObservationsAndRespectsLimits (0.00s)
+--- PASS: TestPreparedRollbackDoesNotTouchRunningUnit (0.01s)
+--- PASS: TestDriftAndBoundedLogRedaction (0.01s)
+--- PASS: TestTypedPayloadRejectsShellAndUnknownFields (0.00s)
+--- PASS: TestCertificateCompensationRefusesNewerDeploymentAndManualFiles (0.01s)
+--- PASS: TestUnconfirmedDriftPreservedAndExplicitReleaseOnlyChangesJournal (0.03s)
+--- PASS: TestUnsupportedOwnedInstanceNeverBecomesMutable (0.01s)
+--- PASS: TestUnknownCertificateConsumerPreservesSharedFiles (0.01s)
+--- PASS: TestAgentUpdatePreconditionPreservesPendingRollback (0.02s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/nodeops	0.118s
+--- PASS: TestSecretScopesAndTamper (0.00s)
+--- PASS: TestTOTPReplayAndRFC (0.00s)
+--- PASS: TestPassword (0.10s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/secure	0.119s
+
+Additional current UI guard test:
+    adoption_test.go:176: {"scope":"sample only; actual Chrome/Go/PostgreSQL; canned read receipts, no Linux effects","counts":{"adoptable":2,"readonly":1,"unpaired":1,"managed":0},"cases":["specific reasons","read-only preview before confirmation","no automatic adoption","read-only replacement map and downloaded unscheduled maintenance plan","zero write requests for replacement guide","responsive captures"]}
+--- PASS: TestAdoptionDryRunAndReportPreserveInfrastructureBoundary (5.55s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	5.577s
+
+Final client-only cause regression: before correction, actual Chrome rejects attributing panel API failure to agent disconnection.
+          const unknownAgent=page.locator('.action-priorities li').filter({has:page.getByText('نمونه ایران متصل',{exact:true})});if(!await unknownAgent.innerText().then(x=>x.includes('دریافت اطلاعات پنل ناموفق بود؛ وضعیت فعلی عامل نامعلوم است.')))throw Error('Panel API failure was incorrectly attributed to the agent connection');
+        Error: Panel API failure was incorrectly attributed to the agent connection
+After correction: actual Chrome/Go/PostgreSQL; native Go/agent/engine/edge source unchanged from235308e.
+--- PASS: TestSimpleEditorChrome (20.59s)
+--- PASS: TestRevisionHonestyBrowser (29.91s)
+--- PASS: TestServerPagesInBrowser (2.86s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	53.387s
+
+Final full-suite rerun before fixture repair: failed in TestRevisionHonestyBrowser because the visible MFA key element was still empty (TypeError reading map); all assertions remain enabled. The fixture now waits for the actual 32-character Base32 key before computing TOTP. No authentication behavior changes.
+After readiness repair, complete suite: go test -p 1 ./... -count=1 -v; isolated PostgreSQL and actual Chrome; runtime is235308e plus client-only API-cause correction. Source .runtime/revision-final-local-after.log:
+--- PASS: TestAdoptionDryRunAndReportPreserveInfrastructureBoundary (5.46s)
+--- PASS: TestUnsupportedAdoptionEvidenceIsNotReady (0.00s)
+--- PASS: TestBootstrapPinnedBytesAndGuards (0.46s)
+--- PASS: TestBootstrapRejectsInvalidFilesAndOrigins (0.60s)
+--- PASS: TestRealBrowser (2.43s)
+--- PASS: TestCertificateIssueAndEncryptedPersistence (0.24s)
+--- PASS: TestCertificatePolicyIsIndependentCASAndRenewalPreservesPolicy (0.33s)
+--- PASS: TestSignedChannelRejectsPendingAndAcceptsApproved (0.24s)
+--- PASS: TestApprovalRequiresMatchingFingerprint (0.27s)
+--- PASS: TestDiscoveryResolverBounds (0.35s)
+--- PASS: TestDNSDiscoveryOnlyCreatesUniqueObservation (1.37s)
+--- PASS: TestSimpleEditorChrome (19.97s)
+--- PASS: TestHumanChangesDescribeMappingsWithoutSecretValues (0.00s)
+--- PASS: TestDraftNormalizationIsReadOnlyRevisionCheckedAndRedacted (0.26s)
+--- PASS: TestLiveEnrollmentChrome (6.55s)
+--- PASS: TestEnrollmentStatusBindsOnlyConsumedIdentity (0.29s)
+--- PASS: TestEntryCheckTargetsActualMappingNotTransportOrBackend (0.37s)
+--- PASS: TestTunnelHealthUsesAuthoritativeNodeAvailability (0.23s)
+--- PASS: TestObservationTruth (0.00s)
+--- PASS: TestRequestIDErrorContract (0.00s)
+--- PASS: TestOperationalPagesInBrowser (5.04s)
+--- PASS: TestDurableJobIdempotencyAndEncryption (0.20s)
+--- PASS: TestPortReservationsSerializeConflictingPlans (0.24s)
+--- PASS: TestPairingPreservesDirectionAndSharedRoutes (0.00s)
+--- PASS: TestPublicResultDoesNotExposeNestedSecrets (0.00s)
+--- PASS: TestManualReimportRefreshesOnlyObservationMetadata (0.24s)
+--- PASS: TestMappingProbeFollowsSharedRestoreWithoutChangingCustomTarget (0.00s)
+--- PASS: TestRetentionKeepsObservedAveragesAndGaps (0.28s)
+--- PASS: TestDayHistoryIsBoundedMeasuredBucketsWithMissingValues (0.24s)
+--- PASS: TestRetirementMixedDatabaseBackupAndDependencies (0.75s)
+--- PASS: TestRetirementControllerRejectsUnsupportedActionsBeforeOlderAgent (0.23s)
+--- PASS: TestRetirementBackupFailureAndPendingBlockNoChanges (0.27s)
+--- PASS: TestRetirementSameLocalIDOnDifferentNodesAndExactNumbers (0.29s)
+--- PASS: TestRevisionHonestyBrowser (29.87s)
+--- PASS: TestServerPagesInBrowser (2.94s)
+--- PASS: TestAuthMFARecoveryAndRevocation (0.37s)
+--- PASS: TestUnknownUserAndLockout (0.41s)
+--- PASS: TestEnrollmentConsumedOnce (0.23s)
+--- PASS: TestOriginAndOversize (0.69s)
+--- PASS: TestSharedExpansionPreservesOtherClientRoutes (0.20s)
+--- PASS: TestClientCommandsNeverReceiveListenerPrivateIdentity (0.00s)
+--- PASS: TestTelegramMutationsStayGatedUntilSingleUseConfirmation (0.22s)
+--- PASS: TestAlertNotificationsRespectSuppressionAndPersistCooldown (0.22s)
+--- PASS: TestTelegramFixedEndpointAndExpiredChallenge (0.22s)
+--- PASS: TestSecurityNotificationCooldownAndRestart (0.21s)
+--- PASS: TestUsageScopeResetAndCAS (0.26s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	83.074s
+--- PASS: TestRedactUnsupportedNestedArrayTables (0.00s)
+--- PASS: TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade (0.00s)
+--- PASS: TestRoundTripAndThreeIndependentEndpoints (0.00s)
+--- PASS: TestRawCannotBypassPreflightOrInjectPaths (0.00s)
+--- PASS: TestConflictAndResourceBounds (0.00s)
+--- PASS: TestSharedTokenMaskAndUnsupportedEngine (0.00s)
+--- PASS: TestRawRoundTripKeepsMappingIdentityAndNames (0.00s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/engine	0.019s
+--- PASS: TestEncryptedBackupAndTamper (0.21s)
+--- PASS: TestSnapshotAndBoundaries (0.02s)
+--- PASS: TestTLSNameAndKeys (0.03s)
+--- PASS: TestOwnedDatabasePurge (0.01s)
+--- PASS: TestDataSymlinkRefused (0.00s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/install	0.301s
+--- PASS: TestBurstBackoffAndRecovery (0.00s)
+--- PASS: TestConcurrentBudget (0.00s)
+PASS
 ok  	github.com/itsHesamHoseini/TunnelManager/internal/limit	0.018s
 --- PASS: TestUnknownActualListenerStillBlocksPort (0.00s)
 --- PASS: TestDockerNATReservationParsing (0.00s)
@@ -66,98 +187,10 @@ ok  	github.com/itsHesamHoseini/TunnelManager/internal/limit	0.018s
 --- PASS: TestUnsupportedOwnedInstanceNeverBecomesMutable (0.01s)
 --- PASS: TestUnknownCertificateConsumerPreservesSharedFiles (0.01s)
 --- PASS: TestAgentUpdatePreconditionPreservesPendingRollback (0.04s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/nodeops	0.156s
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/nodeops	0.149s
 --- PASS: TestSecretScopesAndTamper (0.00s)
 --- PASS: TestTOTPReplayAndRFC (0.00s)
---- PASS: TestPassword (0.10s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/secure	0.124s
---- PASS: TestRealBrowser (2.82s)
---- PASS: TestSimpleEditorChrome (5.84s)
---- PASS: TestOperationalPagesInBrowser (4.95s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	13.648s
-
-Current local verification checkpoint (2026-10-23)
-Commands: npm run build --prefix web; TEST_DATABASE_URL=<isolated loopback PostgreSQL> TUNNELMANAGER_BROWSER_TESTS=1 go test -p 1 ./... -count=1 -v; go vet ./...; Linux -tags nativelab compile-only; supported-engine/neutrality/secrets scans.
-All local package tests succeeded. The Linux binaries compiled but were not executed on Windows. Current new native matrix/entry-check/source qualification remains pending.
-    adoption_test.go:174: {"scope":"sample only; actual Chrome/Go/PostgreSQL; canned read receipts, no Linux effects","counts":{"adoptable":2,"readonly":1,"unpaired":1,"managed":0},"cases":["specific reasons","read-only preview before confirmation","no automatic adoption","responsive captures"]}
---- PASS: TestAdoptionDryRunAndReportPreserveInfrastructureBoundary (4.77s)
---- PASS: TestUnsupportedAdoptionEvidenceIsNotReady (0.00s)
---- PASS: TestRealBrowser (2.37s)
---- PASS: TestCertificateIssueAndEncryptedPersistence (0.32s)
---- PASS: TestCertificatePolicyIsIndependentCASAndRenewalPreservesPolicy (0.25s)
---- PASS: TestSignedChannelRejectsPendingAndAcceptsApproved (0.25s)
---- PASS: TestApprovalRequiresMatchingFingerprint (0.33s)
---- PASS: TestDiscoveryResolverBounds (0.35s)
---- PASS: TestDNSDiscoveryOnlyCreatesUniqueObservation (1.88s)
-    editor_browser_test.go:82: {"scope":"sample UI only; real Chrome + Go + isolated PostgreSQL, no engine execution","cases":["six ordinary concepts","repeatable mappings/default loopback","inline port overlap","advanced reset","form/raw exclusion","secret-free stored draft","human preview","API failure preserves inputs"],"viewports":[1448,1920,390],"nativeEdits":"pending"}
---- PASS: TestSimpleEditorChrome (20.26s)
---- PASS: TestHumanChangesDescribeMappingsWithoutSecretValues (0.00s)
---- PASS: TestDraftNormalizationIsReadOnlyRevisionCheckedAndRedacted (0.25s)
-    enrollment_browser_test.go:26: {"scope":"sample; actual Chrome/Go/PostgreSQL identity registration, no Linux installation","cases":["waiting","private token not stored/captured","poll error recovers","identity received automatically","comparison required before full-fingerprint approval","approval does not imply fresh observations"],"viewports":[1448,1920,390]}
---- PASS: TestLiveEnrollmentChrome (6.50s)
---- PASS: TestEnrollmentStatusBindsOnlyConsumedIdentity (0.27s)
---- PASS: TestEntryCheckTargetsActualMappingNotTransportOrBackend (0.24s)
---- PASS: TestObservationTruth (0.00s)
---- PASS: TestRequestIDErrorContract (0.00s)
---- PASS: TestOperationalPagesInBrowser (4.90s)
---- PASS: TestDurableJobIdempotencyAndEncryption (0.22s)
---- PASS: TestPortReservationsSerializeConflictingPlans (0.25s)
---- PASS: TestPairingPreservesDirectionAndSharedRoutes (0.00s)
---- PASS: TestPublicResultDoesNotExposeNestedSecrets (0.00s)
---- PASS: TestManualReimportRefreshesOnlyObservationMetadata (0.20s)
---- PASS: TestMappingProbeFollowsSharedRestoreWithoutChangingCustomTarget (0.00s)
---- PASS: TestRetentionKeepsObservedAveragesAndGaps (0.21s)
---- PASS: TestDayHistoryIsBoundedMeasuredBucketsWithMissingValues (0.20s)
---- PASS: TestRetirementMixedDatabaseBackupAndDependencies (0.55s)
---- PASS: TestRetirementControllerRejectsUnsupportedActionsBeforeOlderAgent (0.22s)
---- PASS: TestRetirementBackupFailureAndPendingBlockNoChanges (0.24s)
---- PASS: TestRetirementSameLocalIDOnDifferentNodesAndExactNumbers (0.25s)
-        {"daily_task":"find disconnected server and inspect cause","buttonClicks":1,"scope":"actual sample Chrome, from home contextual action"}
-        {"scope":"sample UI with real Chrome and isolated Go/PostgreSQL authentication","before":false,"widths":[1448,1920,390],"screenshots":"docs/evidence/revision2","assertions":"offline/missing/API-failure resources, messages, time isolation, desktop layout"}
---- PASS: TestRevisionHonestyBrowser (19.35s)
---- PASS: TestServerPagesInBrowser (2.90s)
---- PASS: TestAuthMFARecoveryAndRevocation (0.32s)
---- PASS: TestUnknownUserAndLockout (0.41s)
---- PASS: TestEnrollmentConsumedOnce (0.26s)
---- PASS: TestOriginAndOversize (0.70s)
---- PASS: TestSharedExpansionPreservesOtherClientRoutes (0.20s)
---- PASS: TestClientCommandsNeverReceiveListenerPrivateIdentity (0.00s)
---- PASS: TestTelegramMutationsStayGatedUntilSingleUseConfirmation (0.23s)
---- PASS: TestAlertNotificationsRespectSuppressionAndPersistCooldown (0.19s)
---- PASS: TestTelegramFixedEndpointAndExpiredChallenge (0.30s)
---- PASS: TestSecurityNotificationCooldownAndRestart (0.22s)
---- PASS: TestUsageScopeResetAndCAS (0.28s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	70.655s
---- PASS: TestRedactUnsupportedNestedArrayTables (0.00s)
---- PASS: TestScopedAdvancedOptionsSurviveAndSecurityOptionsDoNotDowngrade (0.00s)
---- PASS: TestRoundTripAndThreeIndependentEndpoints (0.00s)
---- PASS: TestRawCannotBypassPreflightOrInjectPaths (0.00s)
---- PASS: TestConflictAndResourceBounds (0.00s)
---- PASS: TestSharedTokenMaskAndUnsupportedEngine (0.00s)
---- PASS: TestRawRoundTripKeepsMappingIdentityAndNames (0.00s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/engine	0.022s
---- PASS: TestEncryptedBackupAndTamper (0.23s)
---- PASS: TestSnapshotAndBoundaries (0.03s)
---- PASS: TestTLSNameAndKeys (0.03s)
---- PASS: TestOwnedDatabasePurge (0.01s)
---- PASS: TestDataSymlinkRefused (0.00s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/install	0.325s
---- PASS: TestBurstBackoffAndRecovery (0.00s)
---- PASS: TestConcurrentBudget (0.00s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/limit	0.014s
---- PASS: TestUnknownActualListenerStillBlocksPort (0.00s)
---- PASS: TestDockerNATReservationParsing (0.00s)
---- PASS: TestRecoveryRequiresSustainedObservationsAndRespectsLimits (0.00s)
---- PASS: TestPreparedRollbackDoesNotTouchRunningUnit (0.01s)
---- PASS: TestDriftAndBoundedLogRedaction (0.01s)
---- PASS: TestTypedPayloadRejectsShellAndUnknownFields (0.00s)
---- PASS: TestCertificateCompensationRefusesNewerDeploymentAndManualFiles (0.01s)
---- PASS: TestUnconfirmedDriftPreservedAndExplicitReleaseOnlyChangesJournal (0.03s)
---- PASS: TestUnsupportedOwnedInstanceNeverBecomesMutable (0.01s)
---- PASS: TestUnknownCertificateConsumerPreservesSharedFiles (0.01s)
---- PASS: TestAgentUpdatePreconditionPreservesPendingRollback (0.02s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/nodeops	0.116s
---- PASS: TestSecretScopesAndTamper (0.00s)
---- PASS: TestTOTPReplayAndRFC (0.00s)
---- PASS: TestPassword (0.10s)
-ok  	github.com/itsHesamHoseini/TunnelManager/internal/secure	0.123s
+--- PASS: TestPassword (0.11s)
+PASS
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/secure	0.132s

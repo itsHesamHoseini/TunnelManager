@@ -1,0 +1,15 @@
+Verify run https://github.com/itsHesamHoseini/TunnelManager/actions/runs/40027781316
+Source5480dab; selected actual edge/installer/security output. No production scope.
+The module-only advisory is retained and not suppressed; no affected imported package/called symbol was reported.
+
+2026-10-23T21:35:06.2589817Z (node:2576) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-23T21:35:45.5368412Z Checking the code against the vulnerabilities...
+2026-10-23T21:35:45.5392659Z Vulnerability #1: GO-2026-5932
+2026-10-23T21:35:45.5393469Z     The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design,
+2026-10-23T21:35:45.5396734Z Your code is affected by 0 vulnerabilities.
+2026-10-23T21:35:45.5397369Z This scan also found 0 vulnerabilities in packages you import and 1
+2026-10-23T21:35:45.5398390Z vulnerability in modules you require, but your code doesn't appear to call these
+2026-10-23T21:35:45.5399014Z vulnerabilities.
+2026-10-23T21:36:36.1415796Z Verified edge bootstrap program bytes and script checksum match.
+2026-10-23T21:36:36.4439608Z Actual nginx JSON throttling request IDs match response headers.
+2026-10-23T21:40:10.1910850Z Native installer rerun, encrypted backup/restore, fault update rollback and uninstall passed.

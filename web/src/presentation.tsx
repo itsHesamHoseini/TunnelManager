@@ -14,6 +14,7 @@ export function isNodeOnline(node: ObservedNode, now = Date.now()) {
  return Boolean(node.approved && node.connected && node.fresh && Number.isFinite(age) && age >= 0 && age <= 90000 && Object.keys(node.telemetry || {}).length);
 }
 export function nodeReason(node: ObservedNode) {
+ if (node.observation_reason === 'panel_refresh_failed') return localized('Panel refresh failed; current agent status is unknown. Retry the panel request.', 'دریافت اطلاعات پنل ناموفق بود؛ وضعیت فعلی عامل نامعلوم است. دریافت را دوباره امتحان کنید.');
  if (!node.approved) return localized('Compare this server’s identity before approval.', 'هویت این سرور را مقایسه و سپس تأیید کنید.');
  if (!node.seen || !Object.keys(node.telemetry || {}).length) return localized('No observations received. Inspect this server’s agent.', 'هنوز داده‌ای نرسیده؛ عامل همین سرور را بررسی کنید.');
  if (!node.connected) return localized('The agent connection is lost. Check its connection and logs.', 'ارتباط عامل قطع است؛ اتصال و لاگ آن را بررسی کنید.');

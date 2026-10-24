@@ -9,7 +9,7 @@ function totp(s){const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';const bits=[.
 const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
  const ctx=await browser.newContext({ignoreHTTPSErrors:true});const page=await ctx.newPage();await page.clock.install();const exceptions=[];page.on('pageerror',e=>exceptions.push(e.message));
- await page.goto(url);await page.getByLabel('Username').fill('testadmin');await page.getByLabel('Password',{exact:true}).fill('Synthetic-Password-2026!');await page.getByRole('button',{name:'Continue',exact:true}).click();await page.locator('.private').waitFor();await page.getByLabel('Code',{exact:true}).fill(totp(await page.locator('.private').innerText()));await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'I saved them'}).click();await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'فارسی',exact:true}).click();
+ await page.goto(url);await page.getByLabel('Username').fill('testadmin');await page.getByLabel('Password',{exact:true}).fill('Synthetic-Password-2026!');await page.getByRole('button',{name:'Continue',exact:true}).click();await page.locator('.private').waitFor();await page.waitForFunction(()=>/^[A-Z2-7]{32}$/.test(document.querySelector('.private')?.textContent?.trim()||''));await page.getByLabel('Code',{exact:true}).fill(totp(await page.locator('.private').innerText()));await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'I saved them'}).click();await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'فارسی',exact:true}).click();
  const nav=name=>page.locator('nav').getByRole('button',{name,exact:true});
  for(const [width,height] of [[1280,1086],[1448,1086],[1920,1086],[390,844]]){
   await page.setViewportSize({width,height});await nav('نمای کلی').click();await page.locator('.server-table').waitFor();
@@ -69,6 +69,7 @@ try{
   await page.getByRole('alert').filter({hasText:/ارتباط|درخواست|دریافت/}).first().waitFor({timeout:20000});
   if(await page.locator('.server-table .status.success').count())throw Error('Failed refresh left online status');
   if(await page.locator('.server-table .resource-current').count())throw Error('Failed refresh left current resources');
+  const unknownAgent=page.locator('.action-priorities li').filter({has:page.getByText('نمونه ایران متصل',{exact:true})});if(!await unknownAgent.innerText().then(x=>x.includes('دریافت اطلاعات پنل ناموفق بود؛ وضعیت فعلی عامل نامعلوم است.')))throw Error('Panel API failure was incorrectly attributed to the agent connection');
   await page.screenshot({path:`${output}/wp0-api-error-sample.png`,fullPage:true});
   await page.unroute('**/api/nodes');
   await nav('نمای کلی').click();const item=page.locator('.action-priorities li').filter({has:page.getByText('نمونه خارج قطع',{exact:true})});await item.getByRole('button',{name:'بررسی سرور',exact:true}).click();await page.getByRole('heading',{name:'نمونه خارج قطع',exact:true}).waitFor();console.log(JSON.stringify({daily_task:'find disconnected server and inspect cause',buttonClicks:1,scope:'actual sample Chrome, from home contextual action'}));
