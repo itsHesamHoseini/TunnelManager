@@ -1,6 +1,6 @@
 # TunnelManager
 
-Current candidate:0.8.0 Backhaul-only owner correction. The owner authorized completing remaining work and production publication on2026-10-24; deployment still requires exact-source native qualification and protected backup/state checks. The linked0.7.0 release is historical. See docs/REVISION-2.md.
+Current release:0.8.0 Backhaul-only operational correction. Exact source d1230c8 passes all four native/security/clean-OS/diagnostic workflows. The owner authorized production publication on2026-10-24; controller/existing-agent upgrades retain independent backups and protected comparisons. Existing tunnels are not automatically adopted or changed. See docs/REVISION-2-REPORT.fa.md.
 Self-hosted Backhaul operations across Linux servers. Go + PostgreSQL + React/TypeScript; Persian RTL/English, light/dark themes. Native agents initiate verified outbound TLS connections. Tunnels continue without the controller.
 
 [فارسی](README.fa.md) · [Operations](docs/OPERATIONS.md) · [Acceptance evidence](docs/REQUIREMENTS.md) · [Progress](docs/PROGRESS.md)
@@ -12,7 +12,7 @@ curl --proto '=https' --tlsv1.2 -fsSLo install.sh https://raw.githubusercontent.
 less install.sh
 sudo sh install.sh setup --with-local-node
 ```
-The bootstrap verifies SHA256. The wizard previews changes, domain/IP, port (9443), TLS and account setup. Docker installation is explicit. Enroll TOTP personally and save recovery codes. [v0.7.0 downloads](https://github.com/itsHesamHoseini/TunnelManager/releases/tag/v0.7.0) are published and bootstrap-tested. See [console qualification](docs/CONSOLE-0.7-REPORT.md) and [release limits](docs/RELEASE-NOTES.md). To build a reviewed checkout:
+The bootstrap verifies SHA256. The wizard previews changes, domain/IP, port (9443), TLS and account setup. Docker installation is explicit. Enroll TOTP personally and save recovery codes. [v0.8.0 downloads](https://github.com/itsHesamHoseini/TunnelManager/releases/tag/v0.8.0) are published and bootstrap-tested. See [console qualification](docs/CONSOLE-0.7-REPORT.md) and [release limits](docs/RELEASE-NOTES.md). To build a reviewed checkout:
 ```sh
 npm ci --prefix web
 npm run build --prefix web

@@ -1,0 +1,30 @@
+Source:d1230c8f15c43e61bd719a1fa595c13b7834194c; local text equivalent8912fd7.
+Run:https://github.com/itsHesamHoseini/TunnelManager/actions/runs/40071249185
+Scope:actual Chrome, isolated Linux/systemd, signed agents, real Backhaul TCP/WSS; not production fault testing.
+Artifact12551928293 SHA256:a2705a9c9a1a0cbec577d8073e8350e8f244b5fd6794726363cebc7b810c05d6.
+Selected actual output:
+
+2026-10-24T06:43:53.9501719Z     native_lab_test.go:148: fresh-node bootstrap rejected incorrect checksum before installation
+2026-10-24T06:43:57.7728728Z     native_lab_test.go:176: Fresh Linux agent bootstrap downloaded the pinned actual CLI over trusted TLS, installed through the existing previewed setup, consumed hidden tokens and retained explicit full-fingerprint approval on both peers.
+2026-10-24T06:51:37.2875911Z     native_lab_test.go:243: {"native_edit":"user_port","reviewStages":3,"recordedButtonClicks":["Edit settings","Check and preview","Confirm impact and apply","The path works; keep changes","Return to tunnels","Synthetic native backhaul tcp","Check connection"],"measurement":"button clicks only; fill/select operations are separate field interactions","scope":"real signed agents/systemd/Backhaul and HTTP through user entry"}
+2026-10-24T06:51:58.3261045Z     native_lab_test.go:322: Actual user entry TCP passed from destination peer; strict TLS to the HTTP backend failed as expected. Neither result asserts VLESS health.
+2026-10-24T06:54:32.7421951Z     native_lab_test.go:354: Real API clone generated independent identities; native version restoration, batch exactly-once actions, disable/start and owned removal passed
+2026-10-24T06:54:53.0786677Z     native_lab_test.go:427: Real unpaired foreign service: signed discovery, explicit named adoption without PID changes, actual stop/start and original-unit removal protection passed
+2026-10-24T06:57:55.4131374Z     native_lab_test.go:560: Real shared listener and two independent clients on the same node imported/adopted; both route edits preserved the other route, scoped options and per-instance revision hashes
+2026-10-24T06:58:54.6733591Z     native_lab_test.go:569: Native discovery -> read-only preview -> explicit adoption -> shared edit -> adopted baseline restore: unchanged preview/adoption PIDs/configs and real HTTP on both restored entries
+2026-10-24T06:59:25.8712453Z     native_lab_test.go:623: Real self-signed TLS/WSS issuance, deployment, linked renewal and automatic coordinated rotation passed; stopped consumer and client private-key isolation preserved
+2026-10-24T07:00:10.0565318Z     native_lab_test.go:673: Actual listener certificate mutation reverted through an independent systemd timer with its agent stopped; real TLS/WSS HTTP paths recovered
+2026-10-24T07:03:42.3154666Z     native_lab_test.go:742: Actual native RAM samples triggered only the selected unit after sustained duration during a controller-route outage; another service PID and an intentional stop were preserved
+2026-10-24T07:03:42.4889860Z     native_lab_test.go:748: Real controller/PostgreSQL/browser -> signed outbound TLS agents -> two Linux systemd peers and Backhaul TCP/WSS passed; data plane works with both agents stopped
+2026-10-24T07:03:43.3070354Z --- PASS: TestNativeControllerBrowserWorkflow (1200.08s)
+2026-10-24T07:03:46.1136328Z --- PASS: TestNativeBoundedDiagnostics (2.06s)
+2026-10-24T07:06:54.3030325Z     native_lab_test.go:360: Actual engine download/checksum, two Linux systemd peers, two shared routes, HTTP data plane, unrelated port conflict, local timeout rollback, intentional stop/start and manual drift passed
+2026-10-24T07:06:54.6258781Z --- PASS: TestNativeBackhaul (188.51s)
+2026-10-24T07:06:54.6259231Z     --- PASS: TestNativeBackhaul/backhaul (185.17s)
+2026-10-24T07:08:47.8587486Z     native_lab_test.go:270: Native ordinary user_port: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-24T07:10:34.5061595Z     native_lab_test.go:270: Native ordinary destination: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-24T07:12:21.0754551Z     native_lab_test.go:270: Native ordinary token: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-24T07:14:07.4676313Z     native_lab_test.go:270: Native ordinary transport: real HTTP after edit and manual restoration; preflight rejected without writes/PID change; two backups; second-peer failure restored by independent 90-second timer
+2026-10-24T07:14:07.8532317Z --- PASS: TestNativeOrdinaryEditFailureMatrix (433.23s)
+2026-10-24T07:14:07.8533097Z     --- PASS: TestNativeOrdinaryEditFailureMatrix/backhaul (429.77s)
+
