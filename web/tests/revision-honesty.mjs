@@ -1,3 +1,4 @@
+import {navigateConsole} from './navigation.mjs';
 import {chromium} from 'playwright';
 import {createHmac} from 'node:crypto';
 import fs from 'node:fs';
@@ -10,7 +11,7 @@ const browser=await chromium.launch({channel:'chrome',headless:true});
 try{
  const ctx=await browser.newContext({ignoreHTTPSErrors:true});const page=await ctx.newPage();await page.clock.install();const exceptions=[];page.on('pageerror',e=>exceptions.push(e.message));
  await page.goto(url);await page.getByLabel('Username').fill('testadmin');await page.getByLabel('Password',{exact:true}).fill('Synthetic-Password-2026!');await page.getByRole('button',{name:'Continue',exact:true}).click();await page.locator('.private').waitFor();await page.waitForFunction(()=>/^[A-Z2-7]{32}$/.test(document.querySelector('.private')?.textContent?.trim()||''));await page.getByLabel('Code',{exact:true}).fill(totp(await page.locator('.private').innerText()));await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'I saved them'}).click();await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'فارسی',exact:true}).click();
- const nav=name=>page.locator('nav').getByRole('button',{name,exact:true});
+ const nav=name=>({click:()=>navigateConsole(page,name)});
  for(const [width,height] of [[1280,1086],[1448,1086],[1920,1086],[390,844]]){
   await page.setViewportSize({width,height});await nav('نمای کلی').click();await page.locator('.server-table').waitFor();
   await page.evaluate(()=>{if(document.querySelector('#sample-label'))return;const x=document.createElement('div');x.id='sample-label';x.textContent='نمونهٔ آزمایشی محلی — داده‌های ساختگی برای آزمون رابط';x.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fff2ca;color:#3f3100;text-align:center;font:12px sans-serif;padding:3px';document.body.append(x)});
@@ -37,10 +38,10 @@ try{
   }
  }
  if(!before){
-  await page.route('**/api/nodes',async route=>{const response=await route.fetch();const rows=await response.json();const metric=Number(new URL(page.url()).hash.slice(1));for(const n of rows){if(n.id==='live-fixture'&&Number.isFinite(metric)){n.telemetry.cpu_percent=metric;n.telemetry.ram_used=metric;n.telemetry.ram_total=100;n.telemetry.disk_total=100;n.telemetry.disk_free=100-metric}}await route.fulfill({response,json:rows})});
+  let requestedMetric=0;await page.route('**/api/nodes',async route=>{const response=await route.fetch();const rows=await response.json();const metric=requestedMetric;for(const n of rows){if(n.id==='live-fixture'&&Number.isFinite(metric)){n.telemetry.cpu_percent=metric;n.telemetry.ram_used=metric;n.telemetry.ram_total=100;n.telemetry.disk_total=100;n.telemetry.disk_free=100-metric}}await route.fulfill({response,json:rows})});
   const thresholdResults=[];
   for(const [value,level,word] of [[69.9,'normal','عادی'],[70,'high','بالا'],[90,'high','بالا'],[90.1,'critical','بحرانی']]){
-   await page.goto(url+'/#'+value);await page.reload();await page.getByRole('heading',{name:'نمای کلی',exact:true}).waitFor();const row=page.locator('.server-table tbody tr').filter({hasText:'نمونه ایران متصل'});await row.locator('.resource-'+level+'.resource-current').first().waitFor();
+   requestedMetric=value;await page.goto(url+'/#/overview');await page.reload();await page.getByRole('heading',{name:'نمای کلی',exact:true}).waitFor();const row=page.locator('.server-table tbody tr').filter({hasText:'نمونه ایران متصل'});await row.locator('.resource-'+level+'.resource-current').first().waitFor();
    if(await row.locator('.resource-'+level+'.resource-current').count()!==3)throw Error('Threshold classification failed: '+value);
    if(!await row.innerText().then(x=>x.includes(word)))throw Error('Threshold text absent: '+value);
    const color=await row.locator('.resource-current').first().evaluate(x=>getComputedStyle(x).color);thresholdResults.push({value,level,color});

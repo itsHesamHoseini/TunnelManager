@@ -1,8 +1,8 @@
-# WP4 navigation proposal — owner approval pending
+# WP4 navigation — implemented after owner completion/deployment request (2026-10-24)
 
-This is a reviewable mapping, not implemented navigation or tested redirects. The correction prompt explicitly asks for owner confirmation before merging Routes and Tunnels. No Backhaul operation is removed. Existing stack, privileges and ownership boundaries remain unchanged.
+The owner asked to finish the remaining work and deploy after the report identified this exact gap. The proposed mapping is now implemented and tested in actual Chrome. No Backhaul operation is removed. Existing stack, privileges and ownership boundaries remain unchanged.
 
-The six primary destinations would be: نمای کلی، تونل‌ها، سرورها، رویدادها و هشدارها، گواهی‌ها، تنظیمات. Each has a distinct existing-library icon.
+The six primary destinations are: نمای کلی، تونل‌ها، سرورها، رویدادها و هشدارها، گواهی‌ها، تنظیمات. Each has a distinct existing-library icon.
 
 | Existing destination/state | Proposed destination | Preserved behavior |
 |---|---|---|
@@ -21,6 +21,6 @@ The six primary destinations would be: نمای کلی، تونل‌ها، سر�
 | Security | Settings, security tab | Active sessions, explicit revocation and human-readable audit |
 | Settings | Settings | Retention, access/rate policy, preferences and existing integrations |
 
-The present console primarily keeps navigation in component state; it does not provide a complete stable URL contract for all these views. After approval, introduce small dependency-free hash navigation, retain aliases for the old destination names and use replacement navigation for aliases. Example proposed targets: `#/tunnels`, `#/tunnels?view=discovery`, `#/servers?view=services`, `#/events?view=alerts`, `#/settings?view=security`. Node/instance selection would retain contextual deep links with friendly visible labels.
+The present console primarily keeps navigation in component state; it does not provide a complete stable URL contract for all these views. The implementation introduces small dependency-free hash navigation, retain aliases for the old destination names and use replacement navigation for aliases. Canonical targets: `#/tunnels`, `#/tunnels?view=discovery`, `#/servers?view=services`, `#/events?view=alerts`, `#/settings?view=security`. Node/instance selection retains contextual deep links with friendly visible labels.
 
-Acceptance after approval: no more than six primary items, distinct icons, keyboard/back navigation, retained unsaved-form guards, aliases reaching every listed capability and actual Chrome daily-workflow tests. This file does not authorize an SSH/root/VLESS architecture change, production access or deployment.
+Acceptance: no more than six primary items, distinct icons, keyboard/back navigation, retained unsaved-form guards, aliases reaching every listed capability and actual Chrome daily-workflow tests. Architecture proposals for SSH/root/VLESS remain unapproved. The separate owner request authorizes the reviewed production software update.

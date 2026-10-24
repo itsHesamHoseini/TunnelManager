@@ -1,3 +1,4 @@
+import {navigateConsole} from './navigation.mjs';
 import {chromium} from 'playwright';
 import {createHmac} from 'node:crypto';
 import fs from 'node:fs';
@@ -11,7 +12,7 @@ const out='docs/evidence/revision2';fs.mkdirSync(out,{recursive:true});
 try{
  await page.goto(url);await page.getByLabel('Username').fill('testadmin');await page.getByLabel('Password',{exact:true}).fill('Synthetic-Password-2026!');await page.getByRole('button',{name:'Continue',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.private')?.textContent?.trim().length>=16);const secret=await page.locator('.private').innerText();await page.getByLabel('Code',{exact:true}).fill(totp(secret));await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'I saved them'}).click();await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'فارسی',exact:true}).click();
  await page.evaluate(()=>{const banner=document.createElement('div');banner.textContent='نمونه — Chrome واقعی و دیتابیس محلی؛ بدون اجرای لینوکسی یا پذیرش مدیریت';banner.style.cssText='background:#fff3dd;color:#714200;padding:8px;text-align:center';document.body.prepend(banner)});
- stage='classification';await page.locator('nav').getByRole('button',{name:'تونل‌ها',exact:true}).click();await page.getByText('بررسی سرویس‌ها و اقدام بعدی',{exact:true}).click();
+ stage='classification';await navigateConsole(page,'تونل‌ها');await page.getByText('بررسی سرویس‌ها و اقدام بعدی',{exact:true}).click();
  const report=page.locator('.adoption-report');await report.getByText('نسخهٔ not-verified تأیید نشده؛ باینری را در ابزارهای سرور بررسی کنید.',{exact:true}).waitFor();
  if((await report.locator('tbody tr').count())!==4)throw Error('Expected four service classifications');
  for(const width of [1448,1920,390]){await page.setViewportSize({width,height:width===390?844:1086});await page.screenshot({path:`${out}/wp3-classification-sample-${width}.png`,fullPage:true});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('page overflow '+width)}

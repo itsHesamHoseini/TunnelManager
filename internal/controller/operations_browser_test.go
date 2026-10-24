@@ -89,5 +89,7 @@ func TestOperationalPagesInBrowser(t *testing.T) {
 	cmd.Env = append(os.Environ(), "TUNNELMANAGER_TEST_URL="+srv.URL)
 	if out, e := cmd.CombinedOutput(); e != nil {
 		t.Fatalf("operational browser: %v\n%s", e, out)
+	} else {
+		t.Log(string(out))
 	}
 }

@@ -1,0 +1,4 @@
+    operations_browser_test.go:93: {"navigation":"six destinations, retained advanced tools, nine old aliases, browser Back, mobile overflow","scope":"actual Chrome/Go/PostgreSQL; synthetic data"}
+--- PASS: TestOperationalPagesInBrowser (6.95s)
+--- PASS: TestRevisionHonestyBrowser (30.66s)
+ok  	github.com/itsHesamHoseini/TunnelManager/internal/controller	37.640s

@@ -1,3 +1,4 @@
+import {navigateConsole} from './navigation.mjs';
 import {chromium} from 'playwright';
 import {createHmac} from 'node:crypto';
 import fs from 'node:fs';
@@ -5,7 +6,7 @@ const url=process.env.TUNNELMANAGER_TEST_URL;if(!/^https:\/\/127\.0\.0\.1:\d+$/.
 const browser=await chromium.launch({channel:'chrome',headless:true});const ctx=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1448,height:1086}});const page=await ctx.newPage();page.setDefaultTimeout(12000);
 function totp(s){const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';let bits='';for(const c of s)bits+=chars.indexOf(c).toString(2).padStart(5,'0');const key=Buffer.from(bits.match(/.{8}/g).map(x=>parseInt(x,2)));const b=Buffer.alloc(8);b.writeBigUInt64BE(BigInt(Math.floor(Date.now()/30000)));const h=createHmac('sha1',key).update(b).digest();return((h.readUInt32BE(h[19]&15)&0x7fffffff)%1000000).toString().padStart(6,'0')}
 const out='docs/evidence/revision2';fs.mkdirSync(out,{recursive:true});let stage='login';const errors=[];page.on('pageerror',e=>errors.push(e.message));
-const edit=async()=>{await page.locator('nav').getByRole('button',{name:'تونل‌ها',exact:true}).click();const row=page.getByRole('row').filter({has:page.getByRole('button',{name:'نمونه تونل قابل ویرایش',exact:true})});await row.getByRole('button',{name:'ویرایش تنظیمات',exact:true}).click();await page.getByRole('heading',{name:'ویرایش تونل',exact:true}).waitFor()};
+const edit=async()=>{await navigateConsole(page,'تونل‌ها');const row=page.getByRole('row').filter({has:page.getByRole('button',{name:'نمونه تونل قابل ویرایش',exact:true})});await row.getByRole('button',{name:'ویرایش تنظیمات',exact:true}).click();await page.getByRole('heading',{name:'ویرایش تونل',exact:true}).waitFor()};
 const capture=async name=>{await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:out+'/'+name+'.png',fullPage:true})};
 try{
  await page.goto(url);await page.getByLabel('Username').fill('testadmin');await page.getByLabel('Password',{exact:true}).fill('Synthetic-Password-2026!');await page.getByRole('button',{name:'Continue',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.private')?.textContent?.trim().length>=16);const secret=await page.locator('.private').innerText();await page.getByLabel('Code',{exact:true}).fill(totp(secret));await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByRole('button',{name:'I saved them'}).click();await page.getByRole('heading',{name:'Overview',exact:true}).waitFor();await page.getByRole('button',{name:'فارسی',exact:true}).click();

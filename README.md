@@ -1,6 +1,6 @@
 # TunnelManager
 
-Current branch: Backhaul-only owner correction, not yet released or qualified for deployment. The linked 0.7.0 release and earlier CI describe the historical product, not this revision. See docs/REVISION-2.md. No production update is authorized.
+Current candidate:0.8.0 Backhaul-only owner correction. The owner authorized completing remaining work and production publication on2026-10-24; deployment still requires exact-source native qualification and protected backup/state checks. The linked0.7.0 release is historical. See docs/REVISION-2.md.
 Self-hosted Backhaul operations across Linux servers. Go + PostgreSQL + React/TypeScript; Persian RTL/English, light/dark themes. Native agents initiate verified outbound TLS connections. Tunnels continue without the controller.
 
 [فارسی](README.fa.md) · [Operations](docs/OPERATIONS.md) · [Acceptance evidence](docs/REQUIREMENTS.md) · [Progress](docs/PROGRESS.md)

@@ -1,6 +1,6 @@
-# Unreleased owner correction
+# TunnelManager 0.8.0
 
-Rathole removed at the owner’s request. Host services/files remain untouched; only product support and retired database records are removed after a verified encrypted migration backup. Native qualification of this revision is pending.
+Rathole removed at the owner’s request. Host services/files remain untouched; only product support and retired database records are removed after a verified encrypted migration backup. Release and production installation require successful exact-source native checks. Ordinary two-peer editing, explicit adoption, truthful monitoring, live pinned bootstrap and six task-oriented workspaces retain the original safety protocol. No existing host tunnel is adopted or changed by upgrading.
 
 # TunnelManager 0.7.0
 Compact operational overview, routes, servers, services and discovery workspaces follow the accepted reference design. Contextual actions lead directly to real instance configuration/logs/lifecycle tools. Selected-node discovery has per-job results; ambiguous peers remain available for manual import. Bounded hostname correlation creates unique observation records without adopting services. Independent endpoints, reverse direction, freshness and application-check scope remain explicit.

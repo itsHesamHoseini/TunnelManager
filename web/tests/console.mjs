@@ -1,8 +1,9 @@
+import {navigateConsole,verifyNavigation} from './navigation.mjs';
 import fs from 'node:fs';
 import {openConsoleService,displayedConfiguration} from './console-selectors.mjs';
 export async function verifyConsole(page){
- await page.setViewportSize({width:1448,height:1086});fs.mkdirSync('docs/evidence',{recursive:true});
- const nav=name=>page.locator('nav').getByRole('button',{name,exact:true});
+ await verifyNavigation(page);await page.setViewportSize({width:1448,height:1086});fs.mkdirSync('docs/evidence',{recursive:true});
+ const nav=name=>({click:()=>navigateConsole(page,name)});
  await nav('نمای کلی').click();await page.locator('.console-metrics').waitFor();await page.screenshot({path:'docs/evidence/console-overview-fixture-fa.png'});
  await nav('مسیرها').click();await page.locator('.console-panel tbody tr').filter({hasText:'Synthetic synthetic_failed'}).getByRole('button',{name:'Synthetic route',exact:true}).click();await page.locator('.port-map').waitFor();
  if(!await page.locator('.port-map').innerText().then(x=>x.includes('2096')&&x.includes('28101')&&x.includes('24444')))throw Error('Independent endpoint ports lost in route pane');
